@@ -1,0 +1,91 @@
+xform: fas-accounts
+version: 1
+description: >
+  FAS Account Master to Qniform parties and accounts. FAS has no party file, so
+  every party the target requires is derived from the account records.
+
+inputs:
+  # A list of one today. Declared as a list so nothing can grow a 1:1
+  # dataset-to-endpoint assumption by accident.
+  - schema: FAS/ACCOUNT-MASTER
+    as: account_master
+
+# Outputs are the target API calls that receive transformed data. Their order is
+# a property of Qniform, not of this project: accounts cannot load before the
+# parties they name, on every migration.
+outputs:
+  - name: parties
+    title: Parties
+    entity: party
+    emitter: emitters/parties.yaml
+    target: PUT /parties
+
+  - name: accounts
+    title: Accounts
+    entity: account
+    emitter: emitters/accounts.yaml
+    target: PUT /firms/{firm}/accounts
+    after: [parties]
+
+# Rules bind source schemas to outputs. This is the level at which the mapping
+# should be legible without reading any SQL, so each one says what it does and
+# where it is not the obvious thing.
+rules:
+  - name: customers
+    title: Customers
+    summary: >
+      Every account holder becomes a party. FAS has no customer key — the holder
+      exists only as a name on the account — so identity can only be per-account:
+      two accounts for the same person are two parties until something better
+      arrives. A joint holding is one party, not two, because Qniform's model has
+      a customer account name exactly one counterparty whatever its legal form.
+      House accounts have no holder and are skipped.
+    from: [FAS/ACCOUNT-MASTER]
+    to: parties
+    models: [party_customers]
+    key: FAS_CUST_ + ACCT-NO
+
+  - name: reps
+    title: Representatives and desks
+    summary: >
+      One party per distinct REP-ID. The same column means two different things:
+      on a customer account it is a registered rep, on a house account it is a
+      trading desk, and Qniform will not accept one where it wants the other — so
+      the role is decided by ACCT-TYPE-CD, not by the column itself. REP-NAME is
+      denormalised onto every account and is not kept consistent, so the same
+      REP-ID arrives with several spellings; that disagreement quarantines the
+      party rather than being silently resolved.
+    from: [FAS/ACCOUNT-MASTER]
+    to: parties
+    models: [party_reps]
+    key: FAS_REP_ + REP-ID
+
+  - name: accounts
+    title: Accounts
+    summary: >
+      One account per source record. ACCT-TYPE-CD is the pivot: H becomes a
+      Qniform inventory account, everything else a customer account. That choice
+      also decides whether a counterparty is permitted at all — sending one on an
+      inventory account is refused outright — and which role the responsible
+      party has to hold. COST-METHOD-CD maps to the lot relief method; a blank
+      means none rather than absent.
+    from: [FAS/ACCOUNT-MASTER]
+    to: accounts
+    models: [accounts]
+    key: ACCT-NO
+
+# An entity is whatever its rules produce, unioned. There is no model named here
+# because there is no hand-written one: every model belongs to exactly one rule.
+entities:
+  - name: party
+    identity:
+      column: code
+      derived_from: [REP-ID, ACCT-NO]
+      conflict:
+        on: [name]
+        resolve: error
+
+  - name: account
+    identity:
+      column: code
+      derived_from: [ACCT-NO]

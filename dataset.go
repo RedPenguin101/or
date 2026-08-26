@@ -1,0 +1,146 @@
+package main
+
+import (
+	"crypto/sha256"
+	"encoding/csv"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+// A Dataset is an uploaded body of data keyed to a Source Schema.
+//
+// The raw bytes are kept exactly as delivered and never rewritten: the landed
+// file is the evidence, and schema-on-read means a schema correction is a
+// metadata edit rather than a re-upload (devnotes/design.md §3, Layer 1).
+type Dataset struct {
+	Name      string `json:"name"`
+	SchemaRef string `json:"schema_ref"`
+	Hash      string `json:"hash"` // content hash of the raw bytes: the Dataset's version
+	RawPath   string `json:"raw_path"`
+	Rows      int    `json:"rows"`       // rows that coerced cleanly and landed
+	Rejected  int    `json:"rejected"`   // rows withheld at coercion
+	StagePath string `json:"stage_path"` // Parquet of the typed rows
+}
+
+// Ingest reads a delivered file against its schema, lands the raw bytes, coerces
+// every cell, and writes the typed rows to Parquet. Rows with any coercion
+// failure are withheld and returned as rejects rather than landed half-read.
+func Ingest(eng *Engine, store string, schema *SourceSchema, name string, raw []byte) (*Dataset, []Reject, error) {
+	hash := fmt.Sprintf("sha256:%x", sha256.Sum256(raw))[:19]
+
+	dir := filepath.Join(store, "datasets", strings.ReplaceAll(hash, ":", "_"))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, nil, err
+	}
+	rawPath := filepath.Join(dir, "raw.csv")
+	if err := os.WriteFile(rawPath, raw, 0o644); err != nil {
+		return nil, nil, err
+	}
+
+	r := csv.NewReader(strings.NewReader(string(raw)))
+	r.FieldsPerRecord = -1
+	header, err := r.Read()
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading header: %w", err)
+	}
+	for i := range header {
+		header[i] = strings.TrimSpace(strings.TrimPrefix(header[i], "\ufeff"))
+	}
+
+	// A column the schema does not know about is a schema problem, not a row
+	// problem — it means the extract changed shape, which the user must see.
+	var unknown []string
+	for _, h := range header {
+		if _, ok := schema.Field(h); !ok {
+			unknown = append(unknown, h)
+		}
+	}
+	if len(unknown) > 0 {
+		return nil, nil, fmt.Errorf("columns not in schema %s: %s", schema.Ref(), strings.Join(unknown, ", "))
+	}
+	for _, f := range schema.Fields {
+		if f.Required && !contains(header, f.Name) {
+			return nil, nil, fmt.Errorf("required field %q missing from the file", f.Name)
+		}
+	}
+
+	var (
+		rejects []Reject
+		typed   [][]*string
+		srcRows []int
+	)
+	line := 1 // header consumed
+	for {
+		rec, err := r.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, nil, fmt.Errorf("line %d: %w", line+1, err)
+		}
+		line++
+
+		row := make([]*string, len(schema.Fields))
+		var errs []string
+		for i, f := range schema.Fields {
+			idx := indexOf(header, f.Name)
+			var cell string
+			if idx >= 0 && idx < len(rec) {
+				cell = rec[idx]
+			}
+			v, cerr := f.Coerce(cell)
+			if cerr != nil {
+				errs = append(errs, cerr.Error())
+				continue
+			}
+			if v == nil && f.Required {
+				errs = append(errs, fmt.Sprintf("%s: required field is absent", f.Name))
+				continue
+			}
+			row[i] = v
+		}
+		// Report every fault on the row at once. Fixing one bad cell only to be
+		// shown the next one is the slowest possible way to clean an extract.
+		if len(errs) > 0 {
+			rejects = append(rejects, Reject{
+				Class:     RejectRow,
+				Phase:     PhaseCoercion,
+				Entity:    schema.Ref(),
+				SourceRow: line,
+				Message:   strings.Join(errs, "; "),
+			})
+			continue
+		}
+		typed = append(typed, row)
+		srcRows = append(srcRows, line)
+	}
+
+	stagePath := filepath.Join(dir, "staged.parquet")
+	if err := eng.WriteStage(stagePath, schema, typed, srcRows); err != nil {
+		return nil, nil, err
+	}
+
+	return &Dataset{
+		Name:      name,
+		SchemaRef: schema.Ref(),
+		Hash:      hash,
+		RawPath:   rawPath,
+		Rows:      len(typed),
+		Rejected:  len(rejects),
+		StagePath: stagePath,
+	}, rejects, nil
+}
+
+func contains(ss []string, s string) bool { return indexOf(ss, s) >= 0 }
+
+func indexOf(ss []string, s string) int {
+	for i, v := range ss {
+		if v == s {
+			return i
+		}
+	}
+	return -1
+}

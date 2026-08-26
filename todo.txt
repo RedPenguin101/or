@@ -1,0 +1,11 @@
+Hash versioning probably doesn't work for the userbase we have. Timestamp versioning is preferable
+
+A consquence of coercion failure is that source rows that fail to coerce are not viewable in the application. Maybe not a big deal.
+
+"To" link in rule is not clickable
+
+Identity 'minting' is probably given a bit too much prominance, it's not that important. Not even really worth a domain term I'd say
+
+How would we handle the "Account Ranges" problem?
+
+"Model" is still a reference in the run window - not a domain term

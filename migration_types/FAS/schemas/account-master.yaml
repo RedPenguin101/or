@@ -1,0 +1,134 @@
+source_system: FAS
+schema: ACCOUNT-MASTER
+title: Account Master
+description: >
+  One record per account. FAS has no party file — customers and registered
+  representatives exist only as denormalised columns on this record and must be
+  derived. See devnotes/design.md §3a.
+layout: csv
+header: true
+
+fields:
+  - name: ACCT-NO
+    type: string
+    required: true
+    description: Account number. Unique. Space-padded to 10 in the source file.
+    encoding: { kind: trim }
+
+  - name: ACCT-TYPE-CD
+    type: enum
+    required: true
+    description: >
+      Account class. Drives almost everything downstream: H maps to a Qniform
+      `inventory` account (no counterparty, responsible party is a *trader*),
+      everything else to a `customer` account (counterparty required,
+      responsible party is a *rep*).
+    values:
+      I: Individual
+      J: Joint
+      C: Corporate
+      H: House / firm inventory
+
+  - name: ACCT-SHORT-NAME
+    type: string
+    required: true
+    description: Display name, 30 chars, space-padded.
+    encoding: { kind: trim }
+
+  - name: CUST-NAME-1
+    type: string
+    required: false
+    description: >
+      Primary holder name. Absent on H accounts. On J accounts this is one of two
+      holders — Qniform models a joint holding as a single party, so the two lines
+      must be combined rather than producing two parties.
+    encoding: { kind: trim }
+    null_values: ["", "N/A"]
+
+  - name: CUST-NAME-2
+    type: string
+    required: false
+    description: >
+      Second holder on J accounts; otherwise blank. Frequently misused as an
+      address line, which is why it is not safe to treat as a name unconditionally.
+    encoding: { kind: trim }
+    null_values: ["", "N/A"]
+
+  - name: REP-ID
+    type: string
+    required: false
+    description: >
+      Registered rep number, zero-padded to 4. On H accounts this is the trading
+      desk id, not a rep — the same column carries a different meaning by account
+      type. 0000 means unassigned.
+    encoding: { kind: trim }
+    null_values: ["0000"]
+
+  - name: REP-NAME
+    type: string
+    required: false
+    description: >
+      Rep display name. Denormalised onto every account and NOT kept consistent —
+      the same REP-ID appears with several spellings. Deriving one party per rep
+      means resolving that conflict. See devnotes/design.md §3a.3.
+    encoding: { kind: trim }
+
+  - name: BRANCH-CD
+    type: string
+    required: false
+    description: Branch/office code. Not consumed in iteration 1 (deferred, design.md §10).
+    encoding: { kind: trim }
+
+  - name: OPEN-DT
+    type: date
+    required: true
+    description: Account opening date.
+    encoding: { kind: cyymmdd }
+
+  - name: CLOSE-DT
+    type: date
+    required: false
+    description: Account closing date; sentinel-null while the account is open.
+    encoding: { kind: cyymmdd }
+    null_values: ["0000000", "0991231"]
+
+  - name: CASH-BAL
+    type: decimal
+    scale: 2
+    required: true
+    description: >
+      Ledger cash balance, signed. Not migrated directly — opening balances arrive
+      as events, so iteration 1 reads and validates it but emits nothing from it.
+    encoding: { kind: overpunch_trailing }
+
+  - name: COST-METHOD-CD
+    type: enum
+    required: false
+    description: Lot relief method. Blank on accounts that hold no positions.
+    values:
+      F: FIFO
+      L: LIFO
+      A: Average cost
+    null_values: ["", " "]
+
+  - name: MARGIN-IND
+    type: boolean
+    required: false
+    description: Margin agreement on file.
+    encoding: { kind: yn }
+    null_values: ["", " "]
+
+  - name: STATUS-CD
+    type: enum
+    required: true
+    description: Record status.
+    values:
+      A: Active
+      C: Closed
+      P: Pending
+
+  - name: FILLER-1
+    type: string
+    required: false
+    description: Unused in the copybook. Retained because extracts still carry it.
+    encoding: { kind: trim }

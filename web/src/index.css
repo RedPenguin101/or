@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: oklch(0.22 0.02 260);
+  --color-ink-soft: oklch(0.48 0.02 260);
+  --color-line: oklch(0.90 0.01 260);
+  --color-surface: oklch(0.99 0.002 260);
+  --color-raised: oklch(1 0 0);
+  --color-accent: oklch(0.55 0.16 255);
+  --color-accent-soft: oklch(0.95 0.03 255);
+  --color-good: oklch(0.58 0.13 155);
+  --color-good-soft: oklch(0.95 0.04 155);
+  --color-warn: oklch(0.65 0.15 65);
+  --color-warn-soft: oklch(0.96 0.05 65);
+  --color-bad: oklch(0.57 0.19 25);
+  --color-bad-soft: oklch(0.96 0.04 25);
+}
+
+@media (prefers-color-scheme: dark) {
+  @theme {
+    --color-ink: oklch(0.94 0.01 260);
+    --color-ink-soft: oklch(0.68 0.02 260);
+    --color-line: oklch(0.32 0.02 260);
+    --color-surface: oklch(0.18 0.02 260);
+    --color-raised: oklch(0.22 0.02 260);
+    --color-accent: oklch(0.72 0.14 255);
+    --color-accent-soft: oklch(0.30 0.06 255);
+    --color-good: oklch(0.72 0.14 155);
+    --color-good-soft: oklch(0.28 0.05 155);
+    --color-warn: oklch(0.78 0.14 65);
+    --color-warn-soft: oklch(0.30 0.06 65);
+    --color-bad: oklch(0.70 0.17 25);
+    --color-bad-soft: oklch(0.30 0.07 25);
+  }
+}
+
+body {
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
