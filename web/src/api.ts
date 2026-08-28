@@ -224,11 +224,12 @@ export type Rule = {
   summary: string;
   from: string[];
   to: string;
-  sql: string;
   mints: Mint;
   binding: TargetBinding;
 };
 
+// SQL is keyed by rule name: a rule's SQL is sql/<name>.sql, by convention
+// rather than declaration, so the two cannot disagree.
 export type Transform = {
   name: string;
   version: number;

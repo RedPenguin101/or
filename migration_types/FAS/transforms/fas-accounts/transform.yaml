@@ -29,7 +29,6 @@ rules:
       House accounts have no holder and are skipped.
     from: [FAS/ACCOUNT-MASTER]
     to: PUT /parties
-    sql: customers
     mints:
       entity: party
       prefix: FAS_CUST_
@@ -57,7 +56,6 @@ rules:
       party rather than being silently resolved.
     from: [FAS/ACCOUNT-MASTER]
     to: PUT /parties
-    sql: reps
     mints:
       entity: party
       prefix: FAS_REP_
@@ -86,7 +84,6 @@ rules:
       means none rather than absent.
     from: [FAS/ACCOUNT-MASTER]
     to: PUT /firms/{firm}/accounts
-    sql: accounts
     mints:
       entity: account
       prefix: ""            # Qniform account codes are the FAS account numbers

@@ -125,18 +125,18 @@ export default function RuleView() {
         </table>
       </Panel>
 
-      <Panel title="How it is computed" aside={`${r.sql}.sql`}>
+      <Panel title="How it is computed" aside={`sql/${r.name}.sql`}>
         <p className="mb-3 max-w-3xl text-xs text-ink-soft">
           Every decision this rule makes is here. Columns are named for the Qniform fields they
           become, and a NULL means the field is left out — so nothing downstream renames,
           reinterprets, or conditionally drops what this produces.
         </p>
         <pre className="mono overflow-x-auto rounded-md border border-line bg-surface p-3 text-[11px] leading-relaxed">
-          {transform.data.sql[r.sql]}
+          {transform.data.sql[r.name]}
         </pre>
-        {transform.data.sql_reads[r.sql]?.length ? (
+        {transform.data.sql_reads[r.name]?.length ? (
           <div className="mono mt-1 text-[11px] text-ink-soft">
-            reads {transform.data.sql_reads[r.sql].join(", ")}
+            reads {transform.data.sql_reads[r.name].join(", ")}
           </div>
         ) : null}
       </Panel>

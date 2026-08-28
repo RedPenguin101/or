@@ -245,14 +245,14 @@ func ExecuteRun(eng *Engine, in RunRequest) (*Run, error) {
 		table := "rule_" + rule.Name
 
 		t0 := time.Now()
-		n, err := eng.Materialise(table, in.Transform.SQL[rule.SQLFile])
+		n, err := eng.Materialise(table, in.Transform.SQL[rule.Name])
 		if err != nil {
 			return nil, err
 		}
 		// A node's hash folds in its inputs, so changing one rule invalidates
 		// only what depends on it rather than the world (design.md §4).
 		run.Nodes[rule.Name] = NodeStat{
-			Hash:   hashJSON([]string{in.Transform.SQL[rule.SQLFile], run.Inputs.Digest}),
+			Hash:   hashJSON([]string{in.Transform.SQL[rule.Name], run.Inputs.Digest}),
 			Cached: false, Rows: n, Ms: time.Since(t0).Milliseconds(),
 		}
 

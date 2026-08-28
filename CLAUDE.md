@@ -239,7 +239,7 @@ These were renamed deliberately; do not reintroduce the old words.
 |---|---|---|
 | Xform | **Transform** | no need to abbreviate until it hurts |
 | Emitter, PayloadSpec | **TargetBinding** | it binds flat rows to the target's shape |
-| Model | **the rule's SQL** (`sql/<name>.sql`) | a rule has exactly one; "model" implied a separate layer |
+| Model | **the rule's SQL**, at `sql/<rule name>.sql` by convention | a rule has exactly one; "model" implied a separate layer, and naming the file only gave the two a way to disagree |
 | Stage, staging | **Dataset** / `DataPath` | the coerced table *is* the Dataset; the CSV was transport |
 | Output (declared) | **target endpoint** | no OnRamp object between a rule and Qniform |
 | stage (on a Reject) | **phase** | collided with the emissions, which were also "stages" |

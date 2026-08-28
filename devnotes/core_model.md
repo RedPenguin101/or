@@ -12,11 +12,11 @@ A **Source Dataset** is a concrete set of data extracted from the source system.
 
 A **Target Entity** is a type of object in Qniform which is ultimately created by the onramp. Examples are Accounts, Parties, EquityTrades. A Target Entity is described by its Target Spec, ultimately encoded as the OpenAPI spec of the relevant Qniform endpoint.
 
-A **Transformation Group** is a set of rules which converts between Source and Target. A TG is linked to the set of Source Schemas that it uses, and a set of Target Entities it creates. A TG application has two stages: **Rules** written in SQL which transform Source Datasets into flat representations of the target entities. An **API Formatter** handles the final mile of transforming these flat datasets into the nested JSON that gets uploaded into Qniform.
+A **Transformation Group** is a set of rules which converts between Sources and Targets. A TG is linked to the set of Source Schemas that it uses, and a set of Target Entities it creates. A TG application has two stages: **Rules** written in SQL which transform Source Datasets into flat representations of the target entities. An **API Formatter** handles the final mile of transforming these flat datasets into the nested JSON that gets uploaded into Qniform.
 
 Within the context of a project, each of these things (except the Source System) is **uniquely versioned**. 
 
-A **Run** is an application of a given collection of Transformation Groups to a given set of Source Datasets conforming to a given set of Source Schemas, producing **Output Results** - the JSON payloads which will ultimately be uploaded to Qniform.
+A **RunExecution** is an application of a Transformation Group to a given set of Source Datasets conforming to a given set of Source Schemas, producing **Output Results** - the JSON payloads which will ultimately be uploaded to Qniform.
 
 ```
 ApplyRun(TransformationGroups, SourceDatasets, SourceSchemas) -> TargetOutputs

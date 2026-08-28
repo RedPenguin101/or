@@ -22,7 +22,7 @@ type Transform struct {
 	Inputs      []Input `yaml:"inputs"      json:"inputs"`
 	Rules       []Rule  `yaml:"rules"       json:"rules"`
 
-	SQL map[string]string `yaml:"-" json:"sql"` // file stem -> the SQL text
+	SQL map[string]string `yaml:"-" json:"sql"` // rule name -> the SQL text
 	Dir string            `yaml:"-" json:"-"`
 }
 
@@ -45,7 +45,10 @@ type Rule struct {
 	Summary string   `yaml:"summary" json:"summary"`
 	From    []string `yaml:"from" json:"from"` // Source Schema refs
 	To      string   `yaml:"to"   json:"to"`   // target endpoint, "PUT /parties"
-	SQLFile string   `yaml:"sql"  json:"sql"`  // the .sql under sql/ that flattens it
+
+	// The SQL that flattens is sql/<name>.sql, by convention rather than
+	// declaration. A rule has exactly one, so naming it would only create a way
+	// for the two to disagree.
 
 	Mints   Mint          `yaml:"mints"   json:"mints"`
 	Binding TargetBinding `yaml:"binding" json:"binding"`
@@ -141,7 +144,6 @@ func (x *Transform) Validate() error {
 	}
 
 	byName := map[string]bool{}
-	claimed := map[string]string{}
 	// prefixes[entity] = rule -> prefix, for the disjointness check below.
 	prefixes := map[string]map[string]string{}
 
@@ -157,16 +159,9 @@ func (x *Transform) Validate() error {
 		if _, err := loadRank(r.To); err != nil {
 			return fmt.Errorf("rule %q: %w", r.Name, err)
 		}
-		if _, ok := x.SQL[r.SQLFile]; !ok {
-			return fmt.Errorf("rule %q names sql/%s.sql, which does not exist", r.Name, r.SQLFile)
+		if _, ok := x.SQL[r.Name]; !ok {
+			return fmt.Errorf("rule %q has no sql/%s.sql", r.Name, r.Name)
 		}
-		// Every SQL file belongs to exactly one rule. An unclaimed one is where
-		// rule logic hides behind the label "implementation" while the rule page
-		// shows a thin projection.
-		if prev, dup := claimed[r.SQLFile]; dup {
-			return fmt.Errorf("sql/%s.sql is claimed by both rule %q and rule %q", r.SQLFile, prev, r.Name)
-		}
-		claimed[r.SQLFile] = r.Name
 
 		if err := r.Mints.validate(r.Name); err != nil {
 			return err
@@ -181,8 +176,11 @@ func (x *Transform) Validate() error {
 		}
 	}
 
+	// A file belonging to two rules is now impossible — the name is the link —
+	// but an orphan is not, and an orphan is where rule logic hides behind the
+	// label "implementation" while the rule page shows a thin projection.
 	for f := range x.SQL {
-		if _, ok := claimed[f]; !ok {
+		if !byName[f] {
 			return fmt.Errorf("sql/%s.sql belongs to no rule; every one must belong to exactly one", f)
 		}
 	}

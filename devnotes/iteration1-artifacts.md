@@ -739,3 +739,22 @@ The `->` and `->>` operators used by `ListRuns` work on both, so nothing else ch
 
 **The general lesson:** an ordering guarantee is only as good as every layer it passes through. Worth
 remembering for the Parquet round trip and for anything that reaches the browser.
+
+### 5.13 Convention beats declaration where there is nothing to decide
+
+A rule used to name its SQL: `sql: party_reps`. Since a rule has exactly one, and the name was the
+only thing linking them, the declaration existed solely to be got wrong. It is now
+`sql/<rule name>.sql` by convention, and the field is gone.
+
+What that bought:
+
+- **A file claimed by two rules is no longer possible.** The check that caught it is deleted — not
+  because it stopped mattering, but because the name is the link and a name is unique.
+- **An orphan file still fails to load**, and that is the check worth keeping. An unclaimed SQL file
+  is exactly where rule logic hid last time, behind the label "implementation", while the rule page
+  showed a thin projection (§5.11).
+
+The general shape: a declaration that can only ever restate something already determined is not
+configuration, it is an opportunity for two sources of truth to disagree. Worth applying the same
+test to what remains — `row_key` is a candidate, since it is `code` on every rule and is really a
+property of the target's upsert key rather than a choice.
