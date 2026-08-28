@@ -5,7 +5,7 @@ import RunView from "./routes/Run";
 import DatasetView from "./routes/Dataset";
 import SchemaView from "./routes/Schema";
 import RuleView from "./routes/Rule";
-import OutputView from "./routes/Output";
+import TargetView from "./routes/Target";
 
 export default function App() {
   const { pathname } = useLocation();
@@ -32,7 +32,7 @@ export default function App() {
           <Route path="/p/:id" element={<Project />} />
           <Route path="/p/:id/s/:ref" element={<SchemaView />} />
           <Route path="/p/:id/x/:rule" element={<RuleView />} />
-          <Route path="/p/:id/o/:name" element={<OutputView />} />
+          <Route path="/p/:id/target" element={<TargetView />} />
           <Route path="/p/:id/d/:did" element={<DatasetView />} />
           <Route path="/p/:id/r/:rid" element={<RunView />} />
         </Routes>

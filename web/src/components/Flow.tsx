@@ -43,9 +43,9 @@ export default function Flow({ run }: { run: Run }) {
         ) : null}
 
         {outputs.map((s, i) => (
-          <div key={s.name} className="flex items-stretch gap-2">
+          <div key={s.rule} className="flex items-stretch gap-2">
             <Node
-              label={s.title || s.name}
+              label={s.title || s.rule}
               value={s.accepted}
               unit={`of ${s.emitted} emitted`}
               sub={s.target}

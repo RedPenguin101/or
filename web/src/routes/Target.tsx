@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api";
 import { ErrorNote, Panel, Pill, Stat } from "../components/ui";
@@ -10,24 +10,29 @@ import { Inline } from "../components/Prose";
 // The coverage table is the point. A migration's real backlog is the set of
 // fields Qniform accepts that nothing yet fills, and that list is otherwise
 // carried in someone's head.
-export default function OutputView() {
-  const { id = "", name = "" } = useParams();
-  const q = useQuery({ queryKey: ["p", id, "o", name], queryFn: () => api.output(id, name) });
+export default function TargetView() {
+  const { id = "" } = useParams();
+  const [params] = useSearchParams();
+  const target = params.get("t") ?? "";
+  const q = useQuery({
+    queryKey: ["p", id, "target", target],
+    queryFn: () => api.target(id, target),
+    enabled: target !== "",
+  });
   const [showDoc, setShowDoc] = useState(false);
 
   if (q.error) return <ErrorNote error={q.error} />;
   if (!q.data) return null;
   const o = q.data;
-  const bound = o.fields.filter((f) => f.bound);
-  const unbound = o.fields.filter((f) => !f.bound);
+  const bound = o.fields.filter((f) => f.bound.length > 0);
+  const unbound = o.fields.filter((f) => f.bound.length === 0);
   const missingRequired = unbound.filter((f) => f.required);
 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-baseline gap-3">
-        <h1 className="text-xl font-semibold tracking-tight">{o.title || o.name}</h1>
-        <Pill>output</Pill>
-        <span className="mono text-xs text-ink-soft">{o.target}</span>
+        <h1 className="mono text-xl font-semibold tracking-tight">{o.target}</h1>
+        <Pill>target</Pill>
         <Link to={`/p/${id}`} className="ml-auto text-xs text-accent hover:underline">
           ← project
         </Link>
@@ -37,7 +42,7 @@ export default function OutputView() {
 
       <Panel
         title="Coverage"
-        aside={`${o.batch.max_items} items per request · ${o.batch.failure_mode.replace("_", " ")}`}
+        aside={o.doc ? `${o.doc.max_items} items per request` : undefined}
       >
         <div className="mb-4 flex flex-wrap gap-10">
           <Stat label="fields bound" value={`${bound.length} of ${o.fields.length}`} tone="good" />
@@ -64,7 +69,7 @@ export default function OutputView() {
               <tr className="border-b border-line">
                 <th className="py-1.5 pr-3 font-medium">Target field</th>
                 <th className="py-1.5 pr-3 font-medium">Type</th>
-                <th className="py-1.5 pr-3 font-medium">Produced?</th>
+                <th className="py-1.5 pr-3 font-medium">Written by</th>
                 <th className="py-1.5 font-medium">What Qniform says</th>
               </tr>
             </thead>
@@ -90,16 +95,18 @@ export default function OutputView() {
                     )}
                   </td>
                   <td className="mono py-1.5 pr-3 whitespace-nowrap">
-                    {f.bound ? (
-                      <span className="text-good">
-                        {f.key_from ? `key from ${f.key_from}` : "yes"}
-                      </span>
+                    {f.bound.length > 0 ? (
+                      <span className="text-good">{f.bound.join(", ")}</span>
                     ) : (
                       <span className="text-ink-soft/60">not populated</span>
                     )}
+                    {f.key_from && (
+                      <div className="text-[10px] text-ink-soft/70">key from {f.key_from}</div>
+                    )}
+                    {f.literal && <div className="text-[10px] text-ink-soft/70">a literal</div>}
                     {f.references && (
                       <div className="text-[10px] text-ink-soft/70">
-                        carries a {f.references} identity
+                        identity minted by {f.references}
                       </div>
                     )}
                   </td>
@@ -121,24 +128,26 @@ export default function OutputView() {
         )}
       </Panel>
 
-      <Panel title="Fed by">
+      <Panel title="Written by">
         <ul className="space-y-1.5 text-sm">
           {o.rules.map((r) => (
             <li key={r.name}>
               <Link to={`/p/${id}/x/${r.name}`} className="hover:text-accent">
                 <span className="font-medium">{r.title}</span>
-                <span className="text-ink-soft"> — {r.from.join(", ")}</span>
+                <span className="text-ink-soft">
+                  {" "}
+                  — {r.from.join(", ")}, minting <span className="mono">{r.mints.prefix}…</span>
+                </span>
               </Link>
             </li>
           ))}
         </ul>
-        {o.after?.length ? (
-          <p className="mt-3 text-xs text-ink-soft">
-            Loads after <span className="mono">{o.after.join(", ")}</span>. That ordering is a
-            property of Qniform rather than of this project: the references here cannot resolve
-            until the earlier output has landed.
-          </p>
-        ) : null}
+        <p className="mt-3 max-w-3xl text-xs text-ink-soft">
+          Load position {o.load_rank} in Qniform&apos;s order. That ordering is a property of the
+          target rather than of this project — the references here cannot resolve until whatever
+          they name has landed — so it is recorded once for Qniform rather than declared per
+          migration.
+        </p>
       </Panel>
 
       {o.doc?.description && (

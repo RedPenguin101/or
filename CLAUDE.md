@@ -77,7 +77,15 @@ only (`db.go`, `migrations/001_initial_schema.sql`); dataset content lands as Pa
    **Ingest decodes and types; it never derives.** No joins, no enrichment, no minting — anything
    that needs to know about the *target* is a rule. The typed table on the far side of ingest **is**
    the Dataset; the CSV was only transport, and there is no staging layer to name.
-3. `xform.go` — **every model belongs to exactly one Rule** (`Validate` rejects an unclaimed one),
+3. `xform.go` — **a Rule owns its whole chain**: the schemas it reads (`from`), the target endpoint
+   it writes (`to`), the identity it mints (`mints`), the SQL that flattens (`model`), and the
+   payload shape (`payload`). There is no Output, no entities section and no `after:` — a rule names
+   Qniform's endpoint directly, conflict policy lives on the mint, and load order is Qniform's own
+   (`qniform.go`), recorded once rather than declared per project. **The mint is declared, not left
+   in SQL**: identity drives dedupe, conflicts, references, the cascade, run diffing and slice
+   closure, and all of those need it without executing it. Two rules minting one entity must have
+   disjoint prefixes (checked at load); `checkMintedPrefix` verifies the SQL agrees with the
+   declaration. **Every model belongs to exactly one Rule** (`Validate` rejects an unclaimed one),
    and an **entity** is the generated union of what its rules produce (`Engine.UnionInto`), never a
    hand-written model. Both rules exist because an unclaimed "preparation" model is where rule logic
    hides while the rule page shows a thin projection — which is exactly what happened with the
@@ -88,7 +96,7 @@ only (`db.go`, `migrations/001_initial_schema.sql`); dataset content lands as Pa
    Reject's `phase`, which is a different axis entirely. The rules are a *directory* (`migration_types/FAS/xforms/fas-accounts/`): a YAML
    manifest, SQL models, YAML emitters. Model order is inferred from the SQL; entity identity is
    *declared*.
-4. `emitter.go` — mechanics only, and deliberately incapable of more. **There is no intermediate
+4. `emitter.go` — the payload shape, mechanics only and deliberately incapable of more. **There is no intermediate
    model**: a rule produces the target's own fields, named as the target names them, and
    `checkColumnsAgainstTarget` in `apply.go` fails any run whose columns are neither fields of the
    target endpoint, nor read for a nesting key, nor `__`-prefixed. The emitter has **no expression
@@ -119,7 +127,7 @@ only (`db.go`, `migrations/001_initial_schema.sql`); dataset content lands as Pa
 
 **Run records are immutable and never migrated.** They are audit artifacts, read years after the
 writing code has moved on, so older shapes stay on disk forever and the obligation is on the
-reader. New Runs carry `record_version` (absent means 0; currently 3); bump `CurrentRecordVersion` in
+reader. New Runs carry `record_version` (absent means 0; currently 4); bump `CurrentRecordVersion` in
 `run.go` whenever the record gains or renames a field, and adapt every past shape in
 `normalizeRun` (`web/src/api.ts`) — one place, not conditionals scattered through components. A reader that meets an absent field **omits it rather than
 reconstructing it** — see `web/src/components/Flow.tsx`, which draws no source counts for a v0 run
@@ -137,6 +145,8 @@ has an `_api.go` sibling, and `api.go` is only the route index.
 - A Run's `reason` is **required**, refused if blank. The audit obligation is about *why*.
 - Tests call `t.Parallel()`.
 - After changing Go code run `gofmt -w .` and `deadcode .`.
+- `runs.body` is `JSON`, **never `JSONB`** — JSONB normalises object key order and silently
+  discards the field order the payload declares.
 - Determinism is a test, not an aspiration: `TestRunIsDeterministic` compares two runs byte for
   byte. Two ordering bugs that no functional test would have caught were found by it.
 

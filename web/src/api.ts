@@ -62,7 +62,7 @@ export type Dataset = {
 };
 
 export type Output = {
-  name: string;
+  rule: string;
   title?: string;
   target: string;
   emitted: number;
@@ -109,11 +109,13 @@ export type Run = {
 //       `withheld_at_ingest`; a reject's `stage` renamed `phase`
 //   v3  `source.staged` renamed `source.rows` — the coerced table IS the
 //       Dataset, so there is no separate staged thing to name
+//   v4  emissions are per-rule (`rule` rather than `name`), since a rule now
+//       owns its whole chain; `tier` dropped
 type RawRun = Omit<Run, "outputs" | "withheld_at_ingest" | "source"> & {
   source?: { delivered: number; rows?: number; staged?: number };
   outputs?: Output[];
   withheld_at_ingest?: Reject[];
-  stages?: (Output & { rejects: (Reject & { stage?: Reject["phase"] })[] | null })[];
+  stages?: (Output & { name?: string; rejects: (Reject & { stage?: Reject["phase"] })[] | null })[];
 };
 
 export function normalizeRun(raw: RawRun): Run {
@@ -149,7 +151,12 @@ export function normalizeRun(raw: RawRun): Run {
     source,
     outputs: all
       .filter((s) => s.name !== "ingest")
-      .map((s) => ({ ...s, rejects: (s.rejects ?? []).map(fixReject) })),
+      .map((s) => ({
+        ...s,
+        // Before v4 an emission was named for its endpoint, not its rule.
+        rule: s.rule ?? s.name ?? "",
+        rejects: (s.rejects ?? []).map(fixReject),
+      })),
     withheld_at_ingest: (ingest?.rejects ?? []).map(fixReject),
   };
 }
@@ -167,80 +174,42 @@ export type RunSummary = {
   rejected: number;
 };
 
-export type Identity = {
-  column: string;
-  derived_from: string[];
+// A Mint declares how a rule constructs the identities it produces. Declared
+// rather than left in SQL because identity does far more work than the
+// expression suggests: dedupe, conflict detection, reference resolution, the
+// quarantine cascade, aligning one run against another for diffing, and the
+// closure a slice has to follow.
+export type Mint = {
+  entity: string;
+  prefix: string;
+  from: string[];
+  column?: string;
   conflict?: { on: string[]; resolve: string };
 };
 
-// A Rule binds source schemas to one Output. It is the unit a person reasons in,
-// and the level at which the mapping should be legible without reading SQL.
+export type Bind = {
+  references?: string;
+  key_from?: string;
+  object?: Record<string, unknown>;
+};
+
+export type PayloadSpec = {
+  row_key: string;
+  fields: Record<string, Bind>;
+  order: string[] | null;
+};
+
+// A Rule is the whole chain: the source it reads, the identity it mints, the SQL
+// that flattens it, and the shape of the payload that leaves.
 export type Rule = {
   name: string;
   title: string;
   summary: string;
   from: string[];
   to: string;
-  models: string[];
-  key: string;
-  output_title: string;
-  target: string;
-  entity: string;
-  identity?: Identity;
-  emitter: string;
-};
-
-export type XformOutput = {
-  name: string;
-  title: string;
-  entity: string;
-  emitter: string;
-  target: string;
-  after?: string[];
-};
-
-export type Emitter = {
-  target: string;
-  row_key: string;
-  batch: { max_items: number; failure_mode: string };
-  order: string[] | null;
-  // No `from` and no `omit_when`: a model column carries the name of the field
-  // it becomes, and absence is a NULL in the model. What is left cannot express
-  // a business decision.
-  fields: Record<string, { references?: string; map?: { key_from: string } }>;
-};
-
-export type FieldCoverage = {
-  name: string;
-  type: string;
-  required: boolean;
-  enum?: string[];
-  description?: string;
-  bound: boolean;
-  references?: string;
-  key_from?: string;
-};
-
-// An Output paired with what the target itself says it accepts. The join of the
-// two — every field Qniform takes, marked with whether a rule binds it — is what
-// turns "what have we not mapped yet" from folklore into a list.
-export type OutputDetail = {
-  name: string;
-  title: string;
-  target: string;
-  entity: string;
-  after: string[] | null;
-  batch: { max_items: number; failure_mode: string };
-  doc?: {
-    target: string;
-    summary: string;
-    description: string;
-    max_items: number;
-  };
-  doc_error?: string;
-  fields: FieldCoverage[];
-  rules: Rule[];
-  unknown_fields: string[];
+  model: string;
+  mints: Mint;
+  payload: PayloadSpec;
 };
 
 export type Xform = {
@@ -249,13 +218,34 @@ export type Xform = {
   description: string;
   hash: string;
   inputs: { schema: string; as: string }[];
-  outputs: XformOutput[];
+  targets: string[];
   rules: Rule[];
-  entities: { name: string; model: string; identity: Identity }[];
   models: Record<string, string>;
-  shared_models: string[] | null;
   model_deps: Record<string, string[]>;
-  emitters: Record<string, Emitter>;
+};
+
+export type FieldCoverage = {
+  name: string;
+  type: string;
+  required: boolean;
+  enum?: string[];
+  description?: string;
+  bound: string[];
+  references?: string;
+  key_from?: string;
+  literal?: boolean;
+};
+
+// A target endpoint paired with what it accepts and which rules populate it.
+// Several rules can write one endpoint, so coverage is a union across them.
+export type TargetDetail = {
+  target: string;
+  load_rank: number;
+  doc?: { target: string; summary: string; description: string; max_items: number };
+  doc_error?: string;
+  fields: FieldCoverage[];
+  rules: Rule[];
+  unknown_fields: string[];
 };
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
@@ -285,8 +275,8 @@ export const api = {
     }),
   schemas: (id: string) => req<Schema[]>(`/api/projects/${id}/schemas`),
   xform: (id: string) => req<Xform>(`/api/projects/${id}/xform`),
-  output: (id: string, name: string) =>
-    req<OutputDetail>(`/api/projects/${id}/outputs/${name}`),
+  target: (id: string, target: string) =>
+    req<TargetDetail>(`/api/projects/${id}/target?t=${encodeURIComponent(target)}`),
   datasets: (id: string) => req<Dataset[]>(`/api/projects/${id}/datasets`),
   datasetRows: (id: string, did: string) =>
     req<{ dataset: Dataset; rows: Record<string, unknown>[] }>(

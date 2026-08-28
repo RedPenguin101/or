@@ -4,121 +4,111 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"os"
 	"sort"
-	"strings"
-
-	"gopkg.in/yaml.v3"
 )
 
-// An Emitter binds a model's columns to a Qniform request body. It is
-// deliberately not a programming language (design.md §3, Layer 3): everything it
-// can express is checkable against openapi.yaml before a row is transformed.
+// PayloadSpec is the last leg of a rule: turning the flat rows its SQL produced
+// into the nested JSON the target accepts.
 //
-// It is *compiled* to SQL rather than interpreted, so omit_when and the rest are
-// evaluated by the one engine that already exists rather than by a second
-// expression evaluator with its own semantics.
-type Emitter struct {
-	Target string          `yaml:"target"  json:"target"`
-	Batch  Batch           `yaml:"batch"   json:"batch"`
+// It lives on the rule rather than on the endpoint so a rule carries its whole
+// chain — source, SQL, payload — and nothing downstream reshapes what it makes.
+// Two rules writing the same endpoint each own their own, which is why a rule
+// that always produces one role can state that role as a literal instead of
+// carrying a column to vary it.
+//
+// There is deliberately no `from` and no conditional: a model column carries the
+// name of the field it becomes, and absence is a NULL in the model, which is
+// omitted by a fixed rule nobody can configure. What is left has no expression
+// syntax, so it cannot express a business decision.
+type PayloadSpec struct {
 	RowKey string          `yaml:"row_key" json:"row_key"`
 	Fields map[string]Bind `yaml:"fields"  json:"fields"`
-	Order  []string        `yaml:"-"       json:"order"` // authored field order, for display
-}
-
-type Batch struct {
-	MaxItems    int    `yaml:"max_items"    json:"max_items"`
-	FailureMode string `yaml:"failure_mode" json:"failure_mode"` // per_item | all_or_nothing
+	Order  []string        `yaml:"-"       json:"order"` // authored order, for display
 }
 
 // Bind is one target field.
-//
-// There is deliberately no `from` and no `omit_when`. A model column carries the
-// name of the field it becomes, so renaming here would be a second place to make
-// a semantic decision; and absence is expressed in the model as NULL, which the
-// emitter turns into an omitted key by a fixed rule nobody can configure.
-//
-// What is left cannot express a business decision, because there is no
-// expression syntax left to express one in.
 type Bind struct {
-	// References names the entity whose identity this field carries. A
-	// declaration, not a transformation: read forwards it orders the outputs,
-	// backwards it drives the quarantine cascade.
+	// References names the rule whose identity this field carries. The value in
+	// the model is the raw source key; the minting rule's prefix is applied here,
+	// so a reference never restates the mint expression and the two cannot drift.
 	References string `yaml:"references" json:"references,omitempty"`
 
-	// Map builds an object whose key comes from a column — the shape Qniform's
-	// PartyRoles uses, where a role is held by virtue of its key being present.
-	// This is the one thing SQL genuinely cannot produce.
-	Map *MapBind `yaml:"map" json:"map,omitempty"`
+	// KeyFrom builds a single-key object whose key comes from a column — the
+	// shape Qniform's PartyRoles uses, where a role is held by virtue of its key
+	// being present. The one thing SQL cannot produce.
+	KeyFrom string `yaml:"key_from" json:"key_from,omitempty"`
+
+	// Object is a literal: a constant shape with no column behind it. A literal
+	// cannot compute anything, so it adds no expressiveness — only the ability to
+	// say "this rule always produces exactly this".
+	Object map[string]any `yaml:"object" json:"object,omitempty"`
 }
 
-type MapBind struct {
-	KeyFrom string         `yaml:"key_from" json:"key_from"`
-	Value   map[string]any `yaml:"value"    json:"value"`
+func (p *PayloadSpec) normalise() {
+	if p.RowKey == "" {
+		p.RowKey = "code"
+	}
 }
 
-func LoadEmitter(path string) (*Emitter, error) {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	var e Emitter
-	if err := yaml.Unmarshal(b, &e); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
-	}
-	// yaml.v3 loses map order, so recover the authored order from the raw node:
-	// the emitted payload should read the way the author wrote it.
-	var doc yaml.Node
-	if err := yaml.Unmarshal(b, &doc); err == nil {
-		e.Order = fieldOrder(&doc)
-	}
-	if e.Target == "" {
-		return nil, fmt.Errorf("%s: emitter has no target", path)
-	}
-	if e.RowKey == "" {
-		return nil, fmt.Errorf("%s: emitter has no row_key", path)
-	}
-	if e.Batch.MaxItems == 0 {
-		e.Batch.MaxItems = 500
-	}
-	return &e, nil
-}
+// SetOrder records the authored field order from the raw YAML node, so an
+// emitted payload reads the way its author wrote it.
+func (p *PayloadSpec) SetOrder(order []string) { p.Order = order }
 
-func fieldOrder(doc *yaml.Node) []string {
-	if len(doc.Content) == 0 {
-		return nil
+func (p *PayloadSpec) validate(rule string, _ map[string]bool) error {
+	if len(p.Fields) == 0 {
+		return fmt.Errorf("rule %q has no payload fields", rule)
 	}
-	root := doc.Content[0]
-	for i := 0; i+1 < len(root.Content); i += 2 {
-		if root.Content[i].Value != "fields" {
-			continue
+	for name, b := range p.Fields {
+		n := 0
+		if b.KeyFrom != "" {
+			n++
 		}
-		m := root.Content[i+1]
-		out := make([]string, 0, len(m.Content)/2)
-		for j := 0; j+1 < len(m.Content); j += 2 {
-			out = append(out, m.Content[j].Value)
+		if b.Object != nil {
+			n++
 		}
-		return out
+		if n > 1 {
+			return fmt.Errorf("rule %q: field %q sets both key_from and object", rule, name)
+		}
+	}
+	if _, ok := p.Fields[p.RowKey]; !ok {
+		return fmt.Errorf("rule %q: row_key %q is not one of the payload fields", rule, p.RowKey)
 	}
 	return nil
 }
 
-func (e *Emitter) fieldNames() []string {
-	if len(e.Order) == len(e.Fields) {
-		return e.Order
+func (p *PayloadSpec) fieldNames() []string {
+	if len(p.Order) == len(p.Fields) {
+		return p.Order
 	}
-	out := make([]string, 0, len(e.Fields))
-	for k := range e.Fields {
+	out := make([]string, 0, len(p.Fields))
+	for k := range p.Fields {
 		out = append(out, k)
 	}
 	sort.Strings(out)
 	return out
 }
 
-// Compile builds the SELECT that feeds this emitter: the columns it sends, plus
-// any column a nesting key is read from. A plain projection — there is nothing
-// left to evaluate.
-func (e *Emitter) Compile(model string) string {
+// Columns is every model column this payload reads: the fields it sends and any
+// column a nesting key comes from. A column outside this set does no work, which
+// is how a vocabulary starts to grow between source and target.
+func (p *PayloadSpec) Columns() map[string]bool {
+	used := map[string]bool{p.RowKey: true}
+	for _, name := range p.fieldNames() {
+		b := p.Fields[name]
+		switch {
+		case b.KeyFrom != "":
+			used[b.KeyFrom] = true
+		case b.Object != nil: // a literal reads nothing
+		default:
+			used[name] = true
+		}
+	}
+	return used
+}
+
+// Compile builds the SELECT that feeds this payload: the columns it reads, in a
+// fixed order. A plain projection — there is nothing left to evaluate.
+func (p *PayloadSpec) Compile(table string) string {
 	var sel []string
 	seen := map[string]bool{}
 	add := func(col string) {
@@ -127,43 +117,47 @@ func (e *Emitter) Compile(model string) string {
 			sel = append(sel, quoteIdent(col))
 		}
 	}
-	add(e.RowKey)
-	for _, name := range e.fieldNames() {
-		b := e.Fields[name]
-		if b.Map != nil {
-			add(b.Map.KeyFrom)
-			continue
+	add(p.RowKey)
+	for _, name := range p.fieldNames() {
+		b := p.Fields[name]
+		switch {
+		case b.KeyFrom != "":
+			add(b.KeyFrom)
+		case b.Object != nil:
+		default:
+			add(name)
 		}
-		add(name) // the column carries the target field's own name
 	}
 	add("__row")
-	// Ordered so that a model emitting several rows per identity always presents
-	// the same one first. Without this the payload would depend on scan order,
-	// which would quietly break both reproducibility and run diffing.
+	// Ordered so a model emitting several rows per identity always presents the
+	// same one first; without it the payload would depend on scan order, which
+	// breaks reproducibility and run diffing alike.
 	return fmt.Sprintf("SELECT %s FROM %s ORDER BY %s, %s",
-		strings.Join(sel, ", "), quoteIdent(model), quoteIdent(e.RowKey), quoteIdent("__row"))
+		joinComma(sel), quoteIdent(table), quoteIdent(p.RowKey), quoteIdent("__row"))
 }
 
-// Payload turns one compiled row into the request body item.
-func (e *Emitter) Payload(row map[string]any) *OrderedMap {
+// Payload turns one compiled row into the request body item. mintRef applies a
+// referenced rule's prefix to a raw source key.
+func (p *PayloadSpec) Payload(row map[string]any, mintRef func(rule string, raw string) string) *OrderedMap {
 	out := NewOrderedMap()
-	for _, name := range e.fieldNames() {
-		b := e.Fields[name]
+	for _, name := range p.fieldNames() {
+		b := p.Fields[name]
 
-		if b.Map != nil {
-			key, _ := row[b.Map.KeyFrom].(string)
+		if b.Object != nil {
+			out.Set(name, b.Object)
+			continue
+		}
+		if b.KeyFrom != "" {
+			key, _ := row[b.KeyFrom].(string)
 			if key == "" {
 				continue
 			}
 			inner := NewOrderedMap()
-			v := b.Map.Value
-			if v == nil {
-				v = map[string]any{}
-			}
-			inner.Set(key, v)
+			inner.Set(key, map[string]any{})
 			out.Set(name, inner)
 			continue
 		}
+
 		// NULL means the key is left out entirely, which is not the same as
 		// sending null. This is the whole mechanism for absence, and it is fixed:
 		// the model decides, by producing NULL or not.
@@ -171,12 +165,30 @@ func (e *Emitter) Payload(row map[string]any) *OrderedMap {
 		if v == nil {
 			continue
 		}
+		if b.References != "" {
+			raw, _ := v.(string)
+			if raw == "" {
+				continue
+			}
+			v = mintRef(b.References, raw)
+		}
 		out.Set(name, v)
 	}
 	return out
 }
 
-// OrderedMap keeps emitted payloads in the order the emitter declares them.
+func joinComma(ss []string) string {
+	out := ""
+	for i, s := range ss {
+		if i > 0 {
+			out += ", "
+		}
+		out += s
+	}
+	return out
+}
+
+// OrderedMap keeps emitted payloads in the order the payload spec declares them.
 // Field order carries no meaning to Qniform but a great deal to a human reading
 // a diff, and the whole product is about making that reading easy.
 type OrderedMap struct {
@@ -184,9 +196,7 @@ type OrderedMap struct {
 	vals map[string]any
 }
 
-func NewOrderedMap() *OrderedMap {
-	return &OrderedMap{vals: map[string]any{}}
-}
+func NewOrderedMap() *OrderedMap { return &OrderedMap{vals: map[string]any{}} }
 
 func (m *OrderedMap) Set(k string, v any) {
 	if _, ok := m.vals[k]; !ok {
@@ -219,22 +229,4 @@ func (m *OrderedMap) MarshalJSON() ([]byte, error) {
 	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
-}
-
-// UsedColumns is every model column this emitter reads: the columns it sends,
-// the columns nesting keys come from, and the row key.
-//
-// A column outside this set does no work — not sent, not read, not referenced —
-// and an accumulation of them is how a vocabulary grows between source and
-// target. Naming the set is what makes that detectable rather than invisible.
-func (e *Emitter) UsedColumns() map[string]bool {
-	used := map[string]bool{e.RowKey: true}
-	for _, name := range e.fieldNames() {
-		if b := e.Fields[name]; b.Map != nil {
-			used[b.Map.KeyFrom] = true
-			continue
-		}
-		used[name] = true
-	}
-	return used
 }

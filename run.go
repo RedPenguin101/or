@@ -22,7 +22,6 @@ type Run struct {
 
 	Number     int       `json:"run"`
 	Project    string    `json:"project"`
-	Tier       string    `json:"tier"`
 	StartedAt  time.Time `json:"started_at"`
 	FinishedAt time.Time `json:"finished_at"`
 	Actor      Actor     `json:"actor"`
@@ -58,7 +57,7 @@ type RunInputs struct {
 
 // CurrentRecordVersion is stamped on new Runs. Bump it whenever the record gains
 // or changes a field, and note the difference where readers branch.
-const CurrentRecordVersion = 3
+const CurrentRecordVersion = 4
 
 // Source is how much data the Run actually read. It is recorded rather than
 // inferred from an Output's counts: derivation means no Output's row count
@@ -90,7 +89,7 @@ type RunTarget struct {
 // target API call that receives transformed data; the code used to call these
 // stages, which collided with a Reject's phase and read as implementation.
 type OutputResult struct {
-	Name     string        `json:"name"`
+	Rule     string        `json:"rule"`
 	Title    string        `json:"title"`
 	Target   string        `json:"target"`
 	Emitted  int           `json:"emitted"`
@@ -135,11 +134,12 @@ type entityRow struct {
 // The work is driven entirely by the declaration in xform.yaml, which is the
 // point of declaring identity separately from minting it: one implementation
 // detects every entity's conflicts rather than each rule hand-rolling its own.
-func Collapse(rows []map[string]any, e Entity) ([]entityRow, []Reject) {
+func Collapse(rows []map[string]any, rule Rule) ([]entityRow, []Reject) {
+	idCol := rule.Mints.IdentityColumn()
 	groups := map[string][]map[string]any{}
 	var order []string
 	for _, r := range rows {
-		id, _ := r[e.Identity.Column].(string)
+		id, _ := r[idCol].(string)
 		if id == "" {
 			continue
 		}
@@ -177,7 +177,7 @@ func Collapse(rows []map[string]any, e Entity) ([]entityRow, []Reject) {
 		sort.Ints(rowList)
 
 		conflicted := false
-		if c := e.Identity.Conflict; c != nil {
+		if c := rule.Mints.Conflict; c != nil {
 			for _, col := range c.On {
 				vals := distinctStrings(g, col)
 				if len(vals) <= 1 {
@@ -187,13 +187,13 @@ func Collapse(rows []map[string]any, e Entity) ([]entityRow, []Reject) {
 				conflicts = append(conflicts, Reject{
 					Class:      RejectConflict,
 					Phase:      PhaseValidation,
-					Entity:     e.Name,
+					Entity:     rule.Mints.Entity,
 					Identity:   id,
 					Field:      col,
 					Values:     vals,
 					SourceRows: rowList,
 					Message: fmt.Sprintf("%d source rows derive %s %s with %d distinct values for %s",
-						len(rowList), e.Name, id, len(vals), col),
+						len(rowList), rule.Mints.Entity, id, len(vals), col),
 				})
 			}
 		}

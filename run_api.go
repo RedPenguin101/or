@@ -31,7 +31,6 @@ func (a *App) createRun(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Reason string `json:"reason"`
 		Actor  string `json:"actor"`
-		Tier   string `json:"tier"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, err)
@@ -46,9 +45,6 @@ func (a *App) createRun(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Actor == "" {
 		req.Actor = "unknown"
-	}
-	if req.Tier == "" {
-		req.Tier = "full"
 	}
 
 	mt, err := a.Type(p.MigrationType)
@@ -70,7 +66,7 @@ func (a *App) createRun(w http.ResponseWriter, r *http.Request) {
 
 	// Bind each declared input to the most recent dataset for its schema.
 	in := ApplyInput{
-		Project: p.Name, Tier: req.Tier, Reason: req.Reason,
+		Project: p.Name, Reason: req.Reason,
 		Actor:    Actor{Kind: "user", ID: req.Actor},
 		Firm:     p.Firm,
 		Schemas:  map[string]*SourceSchema{},

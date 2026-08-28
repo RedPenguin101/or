@@ -86,7 +86,7 @@ export default function RunView() {
       )}
 
       {r.outputs.map((o) => (
-        <OutputPanel key={o.name} output={o} />
+        <OutputPanel key={o.rule} output={o} />
       ))}
 
       <Panel title="Models" aside="hashes fold in their inputs, so a change invalidates only what depends on it">
@@ -130,7 +130,7 @@ function OutputPanel({ output: s }: { output: Output }) {
     <Panel
       title={
         <span className="flex items-center gap-2">
-          {s.title || s.name}
+          {s.title || s.rule}
           <span className="mono text-xs font-normal text-ink-soft">{s.target}</span>
         </span>
       }

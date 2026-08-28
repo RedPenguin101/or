@@ -3,6 +3,10 @@
 -- Reads the Account Master directly. There is no preparation step: coercion,
 -- trimming and typing happened when the dataset was ingested, and the dataset
 -- IS that coerced table — the CSV was only how it arrived.
+--
+-- No `role` column: this rule only ever produces customers, so the payload says
+-- so as a literal rather than carrying a column to vary something that never
+-- varies. That column existed only when one payload shape served two rules.
 
 SELECT
     -- FAS has no customer key. The holder exists only as a name on the account,
@@ -18,7 +22,6 @@ SELECT
     END                                             AS name,
 
     ''                                              AS pre_name,
-    'customer'                                      AS role,
     __row
 FROM account_master
 WHERE "ACCT-TYPE-CD" <> 'H'     -- the firm's own book has no holder

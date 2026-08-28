@@ -9,3 +9,6 @@ Identity 'minting' is probably given a bit too much prominance, it's not that im
 How would we handle the "Account Ranges" problem?
 
 "Model" is still a reference in the run window - not a domain term
+
+What's Actor? Necessary at this point?
+Same with Tier, seems premature to have this.

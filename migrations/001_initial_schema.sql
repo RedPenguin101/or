@@ -56,7 +56,10 @@ CREATE TABLE IF NOT EXISTS runs (
     -- Required, not optional. The audit obligation is about *why*.
     reason       TEXT        NOT NULL CHECK (length(trim(reason)) > 0),
     actor        TEXT        NOT NULL,
-    body         JSONB       NOT NULL,
+    -- JSON, not JSONB. JSONB normalises object key order (by key length, then
+    -- bytewise), which silently discards the field order the payload spec
+    -- declares — and that order is most of what makes a run diff readable.
+    body         JSON        NOT NULL,
     started_at   TIMESTAMPTZ NOT NULL,
     finished_at  TIMESTAMPTZ NOT NULL,
     UNIQUE (project_id, number)
@@ -64,3 +67,15 @@ CREATE TABLE IF NOT EXISTS runs (
 
 CREATE INDEX IF NOT EXISTS runs_project_number ON runs (project_id, number DESC);
 CREATE INDEX IF NOT EXISTS datasets_project     ON datasets (project_id, created_at DESC);
+
+-- Existing databases were created with JSONB. Guarded so the rewrite happens
+-- once rather than on every boot.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'runs' AND column_name = 'body' AND data_type = 'jsonb'
+    ) THEN
+        ALTER TABLE runs ALTER COLUMN body TYPE JSON USING body::text::json;
+    END IF;
+END $$;

@@ -28,10 +28,10 @@ func TestEmittedPayloadsMatchQniformSpec(t *testing.T) {
 	for _, o := range run.Outputs {
 		rejects, err := spec.ValidateBatch(o.Target, o.Payloads)
 		if err != nil {
-			t.Fatalf("output %s: %v", o.Name, err)
+			t.Fatalf("output %s: %v", o.Rule, err)
 		}
 		for _, r := range rejects {
-			t.Errorf("output %s: %s %s: %s", o.Name, r.Identity, r.Field, r.Message)
+			t.Errorf("output %s: %s %s: %s", o.Rule, r.Identity, r.Field, r.Message)
 		}
 	}
 }

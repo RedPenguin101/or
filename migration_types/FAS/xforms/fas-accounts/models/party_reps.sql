@@ -12,7 +12,8 @@ SELECT
 
     -- One column, two meanings: on a customer account REP-ID is a registered
     -- rep, on a house account it is a trading desk. Qniform will not accept one
-    -- where it wants the other, so the role is decided by ACCT-TYPE-CD.
+    -- where it wants the other, so the role is decided by ACCT-TYPE-CD. This one
+    -- genuinely varies by row, so unlike the customers rule it needs a column.
     CASE WHEN "ACCT-TYPE-CD" = 'H'
          THEN 'trader' ELSE 'rep'
     END                                             AS role,

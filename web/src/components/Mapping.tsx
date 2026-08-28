@@ -21,7 +21,7 @@ export default function Mapping({
   const [hot, setHot] = useState<string | null>(null);
 
   const rulesFor = (schemaRef: string) => xform.rules.filter((r) => r.from.includes(schemaRef));
-  const rulesTo = (output: string) => xform.rules.filter((r) => r.to === output);
+  const rulesTo = (target: string) => xform.rules.filter((r) => r.to === target);
 
   // Highlighting is how the binding is shown. Drawing connector lines between
   // variable-height cards needs measurement and breaks on reflow; lighting up
@@ -89,28 +89,25 @@ export default function Mapping({
                 </span>
               ))}
               <span className="text-ink-soft">→</span>
-              <span className="rounded bg-raised px-1.5 py-0.5 text-ink-soft">
-                {r.output_title || r.to}
-              </span>
+              <span className="mono rounded bg-raised px-1.5 py-0.5 text-ink-soft">{r.to}</span>
             </div>
           </Link>
         ))}
       </Column>
 
-      <Column title="Outputs" count={xform.outputs.length}>
-        {xform.outputs.map((o) => (
+      <Column title="Targets" count={xform.targets.length}>
+        {xform.targets.map((t, i) => (
           <Link
-            key={o.name}
-            to={`/p/${projectId}/o/${o.name}`}
-            className={cls(lit("output", o.name))}
-            onMouseEnter={() => setHot(`output|${o.name}`)}
+            key={t}
+            to={`/p/${projectId}/target?t=${encodeURIComponent(t)}`}
+            className={cls(lit("output", t))}
+            onMouseEnter={() => setHot(`output|${t}`)}
             onMouseLeave={() => setHot(null)}
           >
-            <div className="text-sm font-medium">{o.title || o.name}</div>
-            <div className="mono mt-1 text-[11px] break-all text-ink-soft">{o.target}</div>
+            <div className="mono text-sm font-medium break-all">{t}</div>
             <div className="mt-1.5 text-xs text-ink-soft">
-              {rulesTo(o.name).length === 1 ? "1 rule feeds" : `${rulesTo(o.name).length} rules feed`} this
-              {o.after?.length ? ` · loads after ${o.after.join(", ")}` : ""}
+              {rulesTo(t).length === 1 ? "1 rule writes" : `${rulesTo(t).length} rules write`} this
+              {i > 0 ? " · loads later" : ""}
             </div>
           </Link>
         ))}

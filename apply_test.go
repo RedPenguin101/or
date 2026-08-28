@@ -27,7 +27,7 @@ func runFAS(t *testing.T) *Run {
 		t.Fatalf("ingest: %v", err)
 	}
 	run, err := Apply(eng, ApplyInput{
-		Project: "fas-demo", Tier: "full", Reason: "walking skeleton",
+		Project: "fas-demo", Reason: "walking skeleton",
 		Actor: Actor{Kind: "test", ID: "go"}, Firm: "PERSUS",
 		Schemas:  map[string]*SourceSchema{"account_master": schema},
 		Datasets: map[string]*Dataset{"account_master": ds},
@@ -50,9 +50,10 @@ func mustSpec(t *testing.T) *Spec {
 	return s
 }
 
-func output(r *Run, name string) *OutputResult {
+// output finds one rule's emission in the Run.
+func output(r *Run, rule string) *OutputResult {
 	for i := range r.Outputs {
-		if r.Outputs[i].Name == name {
+		if r.Outputs[i].Rule == rule {
 			return &r.Outputs[i]
 		}
 	}
@@ -63,13 +64,17 @@ func TestApplyFanOutAndCascade(t *testing.T) {
 	t.Parallel()
 	run := runFAS(t)
 
-	// One flat file becomes two outputs, in dependency order.
-	if got := len(run.Outputs); got != 2 {
-		t.Fatalf("outputs = %d, want 2: %+v", got, run.Outputs)
+	// One flat file becomes three rule emissions across two endpoints, ordered by
+	// Qniform's own load order: parties before the accounts that name them.
+	if got := len(run.Outputs); got != 3 {
+		t.Fatalf("outputs = %d, want 3: %+v", got, run.Outputs)
 	}
-	if run.Outputs[0].Name != "parties" || run.Outputs[1].Name != "accounts" {
-		t.Errorf("output order = %s, %s; accounts must follow parties",
-			run.Outputs[0].Name, run.Outputs[1].Name)
+	var order []string
+	for _, o := range run.Outputs {
+		order = append(order, o.Rule)
+	}
+	if strings.Join(order, ",") != "customers,reps,accounts" {
+		t.Errorf("rule order = %v; accounts must run after both party rules", order)
 	}
 	// Coercion failures belong to the Run, not to an output: no rule saw them.
 	if len(run.WithheldAtIngest) != 1 {
@@ -78,9 +83,9 @@ func TestApplyFanOutAndCascade(t *testing.T) {
 
 	// Two reps have inconsistent spellings across the file. Neither is a bad row;
 	// the sets disagree, so both are quarantined and the rest still emit.
-	p := output(run, "parties")
+	p := output(run, "reps")
 	if p.Rejected != 2 {
-		t.Errorf("party rejects = %d, want 2 (REP 0042 and 0117)", p.Rejected)
+		t.Errorf("rep rejects = %d, want 2 (REP 0042 and 0117)", p.Rejected)
 	}
 	for _, r := range p.Rejects {
 		if r.Class != RejectConflict {
@@ -90,8 +95,11 @@ func TestApplyFanOutAndCascade(t *testing.T) {
 			t.Errorf("conflict %s must name the rows that disagree, got %v", r.Identity, r.SourceRows)
 		}
 	}
-	if p.Accepted != 20 { // 16 customers + 4 clean reps/desks
-		t.Errorf("parties accepted = %d, want 20", p.Accepted)
+	if p.Accepted != 4 {
+		t.Errorf("reps accepted = %d, want 4 (0203 plus three desks)", p.Accepted)
+	}
+	if c := output(run, "customers"); c.Accepted != 16 {
+		t.Errorf("customers accepted = %d, want 16", c.Accepted)
 	}
 
 	// The cascade: 2 quarantined reps withhold the 10 accounts that name them.
@@ -109,8 +117,8 @@ func TestApplyFanOutAndCascade(t *testing.T) {
 			t.Errorf("account reject %s has no cause", r.Identity)
 			continue
 		}
-		if r.Cause.Output != "parties" {
-			t.Errorf("account reject %s blames output %q, want parties", r.Identity, r.Cause.Output)
+		if r.Cause.Output != "reps" {
+			t.Errorf("account reject %s blames %q, want reps", r.Identity, r.Cause.Output)
 		}
 	}
 	if run.Status() != "partial" {
@@ -159,21 +167,25 @@ func TestApplyConditionalFieldsByType(t *testing.T) {
 func TestDerivedRolesVaryByAccountType(t *testing.T) {
 	t.Parallel()
 	run := runFAS(t)
-	p := output(run, "parties")
-
 	roles := map[string]int{}
-	for _, pl := range p.Payloads {
+	var all []*OrderedMap
+	for _, o := range run.Outputs {
+		if o.Target == "PUT /parties" {
+			all = append(all, o.Payloads...)
+		}
+	}
+	for _, pl := range all {
 		r, ok := pl.Get("roles")
 		if !ok {
 			t.Errorf("party %v has no roles", mustGet(pl, "code"))
 			continue
 		}
-		om, ok := r.(*OrderedMap)
-		if !ok || om.Len() != 1 {
+		key, ok := singleKey(r)
+		if !ok {
 			t.Errorf("party %v roles malformed: %#v", mustGet(pl, "code"), r)
 			continue
 		}
-		roles[om.keys[0]]++
+		roles[key]++
 	}
 	// The same REP-ID column yields a trader on house accounts and a rep on
 	// customer accounts — one column, two target roles, decided by a sibling.
@@ -211,6 +223,25 @@ func TestRunIsDeterministic(t *testing.T) {
 
 func mustGet(m *OrderedMap, k string) any { v, _ := m.Get(k); return v }
 
+// singleKey reads the one key from a roles object. A rule whose role never
+// varies states it as a literal map; one whose role varies by row builds an
+// OrderedMap from a column. Both are one-key objects to Qniform.
+func singleKey(v any) (string, bool) {
+	switch t := v.(type) {
+	case *OrderedMap:
+		if t.Len() == 1 {
+			return t.keys[0], true
+		}
+	case map[string]any:
+		if len(t) == 1 {
+			for k := range t {
+				return k, true
+			}
+		}
+	}
+	return "", false
+}
+
 // The emitter can no longer rename or omit conditionally, so the only place a
 // vocabulary could still accumulate is a rule quietly selecting columns that
 // mean nothing to the target. This is the check that stops it.
@@ -243,7 +274,7 @@ func TestRuleColumnsMustBeTargetFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = Apply(eng, ApplyInput{
-		Project: "fas-demo", Tier: "full", Reason: "guard", Actor: Actor{Kind: "test", ID: "go"},
+		Project: "fas-demo", Reason: "guard", Actor: Actor{Kind: "test", ID: "go"},
 		Firm:     "PERSUS",
 		Schemas:  map[string]*SourceSchema{"account_master": schema},
 		Datasets: map[string]*Dataset{"account_master": ds},

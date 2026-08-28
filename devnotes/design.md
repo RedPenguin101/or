@@ -115,11 +115,11 @@ question from *which Output* it happened on.
 Seconds-scale feedback over 100M rows is not achievable. Rather than pretend there is one loop,
 stratify explicitly into three tiers. `[LEANING]`
 
-| Tier | Scope | Target latency | Qniform interaction |
-|---|---|---|---|
-| **Slice** | ~1k referentially-closed rows | < 1s | `/simulate` + OpenAPI schema validation |
-| **Sample** | ~1% stratified | < 60s | ephemeral instance |
-| **Full** | everything | hours | ephemeral instance |
+| Tier       | Scope                         | Target latency | Qniform interaction                     |
+|------------|-------------------------------|----------------|-----------------------------------------|
+| **Slice**  | ~1k referentially-closed rows | < 1s           | `/simulate` + OpenAPI schema validation |
+| **Sample** | ~1% stratified                | < 60s          | ephemeral instance                      |
+| **Full**   | everything                    | hours          | ephemeral instance                      |
 
 ### The Slice is the key primitive
 
@@ -629,3 +629,80 @@ versioned and visible like a rule — and not an unclaimed model that quietly be
 The other real cost is coupling: an intermediate would insulate the rules from Qniform's API
 changing. That coupling is accepted deliberately. The target *is* the product, and its spec is
 versioned and available.
+
+---
+
+## 3c. A rule owns its whole chain
+
+`[DECIDED]` Supersedes the split in §3b where the payload shape hung off the endpoint.
+
+A **Rule** is now the complete path from source to target: the schemas it reads, the identity it
+mints, the SQL that flattens, and the shape of the payload that leaves. Nothing downstream renames,
+reinterprets or reshapes what a rule produces, so a rule can be read end to end.
+
+Three concepts dissolved into that:
+
+- **Output is gone.** A rule names its target endpoint directly (`to: PUT /parties`). There is no
+  OnRamp-side object standing between a rule and Qniform's endpoint, so there is nothing to drift
+  from the spec.
+- **The entities section is gone.** With identity per-rule, the conflict policy moved onto the mint.
+  What an entity *is* belongs to Qniform's spec, so `entity:` is now just a name linking a
+  reference to the rules that mint it.
+- **`after:` is gone.** Qniform's referential order (securities, parties, party-relations, accounts,
+  events) is fixed for every migration, so it lives once in `qniform.go` rather than being restated
+  per project. An unranked target is an error, which forces a decision about what it depends on
+  instead of silently landing last.
+
+### What this cost, and how it was bought back
+
+Sharing one payload shape across the rules feeding an endpoint was doing real work: it was the only
+thing making identity an entity-wide property. Collapse ran across the union, so two rules could not
+mint the same code unnoticed. Per-rule pipelines lose that, and Qniform explicitly models a party
+holding several roles, so a party that is both a customer and a rep is foreseeable rather than
+exotic.
+
+Bought back by **declaring the mint**:
+
+```yaml
+mints:
+  entity: party
+  prefix: FAS_REP_
+  from: [REP-ID]
+  conflict: { on: [name], resolve: error }
+```
+
+Two rules minting one entity must have **disjoint prefixes**, checked at load. Collision becomes
+impossible by construction rather than detected after the fact — and the consequence, which is the
+right one, is that a multi-role party must be authored by one rule explicitly rather than emerging
+from a collapse that got it silently wrong before.
+
+### Why the mint is declared rather than left in SQL
+
+Identity does far more work than the expression suggests. It deduplicates, detects disagreement,
+resolves what other rules reference, drives the quarantine cascade, aligns one Run against another
+for diffing (§8), and is the closure a Slice has to follow (§2). **Every one of those needs to know
+the mint without executing it.**
+
+The slice case is the sharpest: closing over "these 12 accounts" means finding the parties they
+reference, and parties do not exist in the source. Either you run the whole transform and walk the
+result — which defeats the point — or you walk symbolically: *this account references
+`FAS_REP_ || REP-ID`, so pull the source rows where `REP-ID` matches*. That is a join on the mint's
+source columns, which is exactly `mints.from`.
+
+Two further consequences now in place:
+
+- **References never restate the mint.** `counterparty: { references: customers }` — the model holds
+  the raw source key, and the referenced rule's prefix is applied when the payload is built. The
+  expression is written once, so the two cannot drift. Previously drift was caught only by the
+  accident that it made every reference unresolvable.
+- **The mint is checked and constrained.** `checkMintedPrefix` verifies the SQL actually mints into
+  the declared key space, and a mint reading `now()`, `random()`, a sequence or a UUID is rejected
+  at load: an identity that is not a pure function of the source makes output depend on insertion
+  order, which breaks reproducibility and makes every row of a run diff look changed.
+
+### A win that fell out
+
+The `role` column in `party_customers.sql` existed **only** because one payload shape served two
+rules. With its own shape, the customers rule states its role as a literal
+(`roles: { object: { customer: {} } }`) and drops the column — and §3b's guard flagged it as dead
+the moment it stopped being read. Literals add no expressiveness, since a constant cannot compute.

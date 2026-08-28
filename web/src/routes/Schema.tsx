@@ -53,7 +53,7 @@ export default function SchemaView() {
               <li key={r.name}>
                 <Link to={`/p/${id}/x/${r.name}`} className="hover:text-accent">
                   <span className="font-medium">{r.title}</span>
-                  <span className="text-ink-soft"> → {r.output_title}</span>
+                  <span className="mono text-ink-soft"> → {r.to}</span>
                 </Link>
               </li>
             ))}

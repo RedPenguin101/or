@@ -4,10 +4,9 @@
 -- produces the target's own shape, flattened; it is not a third vocabulary
 -- sitting between the two.
 --
--- The party codes named here are minted by the same expressions the party rules
--- use. If the two ever drift, every account referencing a party would be
--- withheld for an unresolvable reference — which the cascade test asserts
--- against, so the duplication cannot rot silently.
+-- The two party columns hold the *raw* source keys. Their prefixes are applied
+-- by the rule's declared references, so this model never restates a mint and the
+-- two cannot drift apart.
 
 SELECT
     "ACCT-NO"                                       AS code,
@@ -28,13 +27,12 @@ SELECT
         ELSE 'none'                                 -- blank means none, not absent
     END                                             AS allocation_method,
 
-    CASE WHEN "REP-ID" IS NOT NULL
-         THEN 'FAS_REP_' || "REP-ID"
-    END                                             AS responsible_party,
-
+    -- NULL on a house account: sending a counterparty there fails the whole
+    -- request with a 400, and a NULL column is an omitted key.
     CASE WHEN "ACCT-TYPE-CD" <> 'H'
-         THEN 'FAS_CUST_' || "ACCT-NO"
+         THEN "ACCT-NO"
     END                                             AS counterparty,
 
+    "REP-ID"                                        AS responsible_party,
     __row
 FROM account_master

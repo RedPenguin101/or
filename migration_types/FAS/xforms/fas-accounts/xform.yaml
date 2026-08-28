@@ -10,26 +10,13 @@ inputs:
   - schema: FAS/ACCOUNT-MASTER
     as: account_master
 
-# Outputs are the target API calls that receive transformed data. Their order is
-# a property of Qniform, not of this project: accounts cannot load before the
-# parties they name, on every migration.
-outputs:
-  - name: parties
-    title: Parties
-    entity: party
-    emitter: emitters/parties.yaml
-    target: PUT /parties
-
-  - name: accounts
-    title: Accounts
-    entity: account
-    emitter: emitters/accounts.yaml
-    target: PUT /firms/{firm}/accounts
-    after: [parties]
-
-# Rules bind source schemas to outputs. This is the level at which the mapping
-# should be legible without reading any SQL, so each one says what it does and
-# where it is not the obvious thing.
+# A rule is the whole chain: the source it reads, the identity it mints, the SQL
+# that flattens it, and the shape of the payload that leaves. Nothing downstream
+# renames, reinterprets or reshapes what a rule produces.
+#
+# Load order is not declared here. Qniform's referential dependencies fix it for
+# every migration (see qniform.go), so restating it per project would only give
+# it somewhere to drift.
 rules:
   - name: customers
     title: Customers
@@ -41,9 +28,22 @@ rules:
       a customer account name exactly one counterparty whatever its legal form.
       House accounts have no holder and are skipped.
     from: [FAS/ACCOUNT-MASTER]
-    to: parties
-    models: [party_customers]
-    key: FAS_CUST_ + ACCT-NO
+    to: PUT /parties
+    model: party_customers
+    mints:
+      entity: party
+      prefix: FAS_CUST_
+      from: [ACCT-NO]
+    payload:
+      row_key: code
+      fields:
+        code: {}
+        name: {}
+        pre_name: {}
+        # This rule only ever makes customers, so it says so outright instead of
+        # carrying a column to vary something that never varies.
+        roles:
+          object: { customer: {} }
 
   - name: reps
     title: Representatives and desks
@@ -56,9 +56,24 @@ rules:
       REP-ID arrives with several spellings; that disagreement quarantines the
       party rather than being silently resolved.
     from: [FAS/ACCOUNT-MASTER]
-    to: parties
-    models: [party_reps]
-    key: FAS_REP_ + REP-ID
+    to: PUT /parties
+    model: party_reps
+    mints:
+      entity: party
+      prefix: FAS_REP_
+      from: [REP-ID]
+      conflict:
+        on: [name]
+        resolve: error
+    payload:
+      row_key: code
+      fields:
+        code: {}
+        name: {}
+        pre_name: {}
+        # Here the role genuinely varies by row, so it comes from a column.
+        roles:
+          key_from: role
 
   - name: accounts
     title: Accounts
@@ -70,22 +85,22 @@ rules:
       party has to hold. COST-METHOD-CD maps to the lot relief method; a blank
       means none rather than absent.
     from: [FAS/ACCOUNT-MASTER]
-    to: accounts
-    models: [accounts]
-    key: ACCT-NO
-
-# An entity is whatever its rules produce, unioned. There is no model named here
-# because there is no hand-written one: every model belongs to exactly one rule.
-entities:
-  - name: party
-    identity:
-      column: code
-      derived_from: [REP-ID, ACCT-NO]
-      conflict:
-        on: [name]
-        resolve: error
-
-  - name: account
-    identity:
-      column: code
-      derived_from: [ACCT-NO]
+    to: PUT /firms/{firm}/accounts
+    model: accounts
+    mints:
+      entity: account
+      prefix: ""            # Qniform account codes are the FAS account numbers
+      from: [ACCT-NO]
+    payload:
+      row_key: code
+      fields:
+        code: {}
+        name: {}
+        type: {}
+        allocation_method: {}
+        # The model carries the raw source key; the referenced rule's prefix is
+        # applied here, so the mint expression is written once and cannot drift.
+        counterparty:
+          references: customers
+        responsible_party:
+          references: reps

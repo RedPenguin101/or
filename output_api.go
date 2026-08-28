@@ -8,26 +8,27 @@ import (
 )
 
 func (a *App) registerOutputRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/projects/{id}/outputs/{name}", a.getOutput)
+	// A target is "PUT /firms/{firm}/accounts" — spaces, slashes and braces. It
+	// travels as a query parameter rather than a path segment so nothing has to
+	// be escaped into a shape the router will argue with.
+	mux.HandleFunc("GET /api/projects/{id}/target", a.getTarget)
 }
 
-// outputView pairs what Qniform accepts with what the rules actually send.
+// targetView pairs what Qniform accepts with what the rules actually send.
 //
 // The spec alone would be a documentation viewer. The useful question is the
-// join: every field the target takes, marked with whether anything binds it —
+// join: every field the target takes, marked with which rules populate it —
 // which is how "what have we not mapped yet" stops being folklore.
-type outputView struct {
-	Name   string     `json:"name"`
-	Title  string     `json:"title"`
-	Target string     `json:"target"`
-	Entity string     `json:"entity"`
-	After  []string   `json:"after"`
-	Batch  Batch      `json:"batch"`
-	Doc    *TargetDoc `json:"doc,omitempty"`
-	DocErr string     `json:"doc_error,omitempty"`
-	Fields []fieldCov `json:"fields"`
-	Rules  []Rule     `json:"rules"`
-	Extra  []string   `json:"unknown_fields"`
+//
+// Several rules can write one endpoint, so coverage is a union across them.
+type targetView struct {
+	Target   string     `json:"target"`
+	LoadRank int        `json:"load_rank"`
+	Doc      *TargetDoc `json:"doc,omitempty"`
+	DocErr   string     `json:"doc_error,omitempty"`
+	Fields   []fieldCov `json:"fields"`
+	Rules    []Rule     `json:"rules"`
+	Extra    []string   `json:"unknown_fields"`
 }
 
 // fieldCov is one field of the target's request body, and what we do about it.
@@ -38,12 +39,15 @@ type fieldCov struct {
 	Enum        []string `json:"enum,omitempty"`
 	Description string   `json:"description,omitempty"`
 
-	Bound      bool   `json:"bound"`
-	References string `json:"references,omitempty"`
-	KeyFrom    string `json:"key_from,omitempty"`
+	// Bound names the rules that populate this field — a union, because several
+	// rules can feed one endpoint and each may cover a different part of it.
+	Bound      []string `json:"bound"`
+	References string   `json:"references,omitempty"`
+	KeyFrom    string   `json:"key_from,omitempty"`
+	Literal    bool     `json:"literal,omitempty"`
 }
 
-func (a *App) getOutput(w http.ResponseWriter, r *http.Request) {
+func (a *App) getTarget(w http.ResponseWriter, r *http.Request) {
 	p, err := a.DB.GetProject(r.Context(), r.PathValue("id"))
 	if err != nil {
 		writeErr(w, http.StatusNotFound, err)
@@ -54,34 +58,25 @@ func (a *App) getOutput(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, fmt.Errorf("no xform for migration type %s", p.MigrationType))
 		return
 	}
-	x := mt.Xform
-
-	name := r.PathValue("name")
-	var out *Output
-	for i := range x.Outputs {
-		if x.Outputs[i].Name == name {
-			out = &x.Outputs[i]
-		}
-	}
-	if out == nil {
-		writeErr(w, http.StatusNotFound, fmt.Errorf("no output %q", name))
+	target := r.URL.Query().Get("t")
+	if target == "" {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("t (the target endpoint) is required"))
 		return
 	}
 
-	em := x.Emitters[out.Emitter]
-	v := outputView{
-		Name: out.Name, Title: out.Title, Target: out.Target,
-		Entity: out.Entity, After: out.After, Rules: []Rule{},
-		Fields: []fieldCov{}, Extra: []string{},
-	}
-	if em != nil {
-		v.Batch = em.Batch
-	}
-	for _, rule := range x.Rules {
-		if rule.To == out.Name {
-			v.Rules = append(v.Rules, rule)
+	var rules []Rule
+	for _, rule := range mt.Xform.Ordered() {
+		if rule.To == target {
+			rules = append(rules, rule)
 		}
 	}
+	if len(rules) == 0 {
+		writeErr(w, http.StatusNotFound, fmt.Errorf("no rule writes to %q", target))
+		return
+	}
+
+	rank, _ := loadRank(target)
+	v := targetView{Target: target, LoadRank: rank, Rules: rules, Fields: []fieldCov{}, Extra: []string{}}
 
 	// Without the spec there is no coverage to report, only bindings. Say so
 	// rather than presenting a partial answer as a complete one.
@@ -90,7 +85,7 @@ func (a *App) getOutput(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, v)
 		return
 	}
-	doc, err := a.Spec.Describe(out.Target)
+	doc, err := a.Spec.Describe(target)
 	if err != nil {
 		v.DocErr = err.Error()
 		writeJSON(w, http.StatusOK, v)
@@ -99,19 +94,31 @@ func (a *App) getOutput(w http.ResponseWriter, r *http.Request) {
 	v.Doc = doc
 
 	required := map[string]bool{}
+	names := []string{}
 	if doc.Item != nil {
 		for _, rq := range doc.Item.Required {
 			required[rq] = true
 		}
-	}
-
-	names := []string{}
-	if doc.Item != nil {
 		for n := range doc.Item.Properties {
 			names = append(names, n)
 		}
 	}
 	sort.Strings(names)
+
+	bound := map[string][]string{}
+	detail := map[string]Bind{}
+	for _, rule := range rules {
+		for name, b := range rule.Payload.Fields {
+			bound[name] = append(bound[name], rule.Name)
+			if _, seen := detail[name]; !seen {
+				detail[name] = b
+			}
+		}
+	}
+	for n := range bound {
+		sort.Strings(bound[n])
+	}
+
 	// Required fields first, then bound ones, then the rest: the reader is
 	// looking for gaps, and a gap in a required field is the urgent kind.
 	sort.SliceStable(names, func(i, j int) bool {
@@ -119,14 +126,15 @@ func (a *App) getOutput(w http.ResponseWriter, r *http.Request) {
 		if ri != rj {
 			return ri
 		}
-		_, bi := em.Fields[names[i]]
-		_, bj := em.Fields[names[j]]
-		return bi && !bj
+		return len(bound[names[i]]) > 0 && len(bound[names[j]]) == 0
 	})
 
 	for _, n := range names {
 		ps := doc.Item.Properties[n]
-		fc := fieldCov{Name: n, Required: required[n]}
+		fc := fieldCov{Name: n, Required: required[n], Bound: bound[n]}
+		if fc.Bound == nil {
+			fc.Bound = []string{}
+		}
 		if ps != nil {
 			fc.Type, fc.Enum, fc.Description = ps.Type, ps.Enum, ps.Description
 			switch {
@@ -138,22 +146,18 @@ func (a *App) getOutput(w http.ResponseWriter, r *http.Request) {
 				fc.Type = ps.Ref[strings.LastIndex(ps.Ref, "/")+1:]
 			}
 		}
-		if b, ok := em.Fields[n]; ok {
-			// The model column carries this field's own name, so there is no
-			// separate source to report — which is the point.
-			fc.Bound, fc.References = true, b.References
-			if b.Map != nil {
-				fc.KeyFrom = b.Map.KeyFrom
-			}
+		if b, ok := detail[n]; ok {
+			fc.References, fc.KeyFrom = b.References, b.KeyFrom
+			fc.Literal = b.Object != nil
 		}
 		v.Fields = append(v.Fields, fc)
 	}
 
 	// A bound field the spec does not have would be rejected by Qniform. The
-	// batch validator already catches it at run time; showing it here catches it
-	// while the rule is being read.
+	// batch validator catches it at run time; showing it here catches it while
+	// the rule is being read.
 	if doc.Item != nil {
-		for n := range em.Fields {
+		for n := range bound {
 			if _, ok := doc.Item.Properties[n]; !ok {
 				v.Extra = append(v.Extra, n)
 			}

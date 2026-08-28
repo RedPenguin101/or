@@ -724,3 +724,18 @@ paid for by hiding the derivation, was the wrong trade.
 
 Record version 3 followed: `source.staged` became `source.rows`, because with no staging step there
 is no staged thing to name — only the file as delivered, and the Dataset.
+
+### 5.12 JSONB was silently discarding payload field order
+
+`runs.body` was `JSONB`. Postgres normalises JSONB object keys — by key length, then bytewise — so
+a payload declared `code, name, pre_name, roles` came back as `code, name, roles, pre_name`.
+
+The `OrderedMap` built to preserve authored order was working correctly and being undone one layer
+down, which is the kind of bug that survives a long time because nothing fails.
+
+Field order carries nothing to Qniform, but a great deal to a human reading a run diff, and making
+that reading easy is most of the product. The column is now `JSON`, which stores the text verbatim.
+The `->` and `->>` operators used by `ListRuns` work on both, so nothing else changed.
+
+**The general lesson:** an ordering guarantee is only as good as every layer it passes through. Worth
+remembering for the Parquet round trip and for anything that reaches the browser.

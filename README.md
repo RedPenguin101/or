@@ -45,17 +45,17 @@ Schemas and rules are not editable yet. That is iteration 2.
 
 ## Layout
 
-| Path | What |
-|---|---|
-| `apply.go` | the pure function; read this first |
+| Path                       | What                                                              |
+|----------------------------|-------------------------------------------------------------------|
+| `apply.go`                 | the pure function; read this first                                |
 | `schema.go`, `encoding.go` | Source Schemas — logical type and physical encoding kept separate |
-| `dataset.go` | ingest: coerce, land as Parquet, withhold what cannot be read |
-| `xform.go`, `emitter.go` | the rules: a manifest, SQL models, declarative emitters |
-| `openapi.go` | validation against Qniform's real spec |
-| `engine.go` | DuckDB, in-process |
-| `migration_types/FAS/` | the shipped schema and rules |
-| `devnotes/` | design discussion and decisions |
-| `web/` | React + Vite frontend |
+| `dataset.go`               | ingest: coerce, land as Parquet, withhold what cannot be read     |
+| `xform.go`, `emitter.go`   | the rules: a manifest, SQL models, declarative emitters           |
+| `openapi.go`               | validation against Qniform's real spec                            |
+| `engine.go`                | DuckDB, in-process                                                |
+| `migration_types/FAS/`     | the shipped schema and rules                                      |
+| `devnotes/`                | design discussion and decisions                                   |
+| `web/`                     | React + Vite frontend                                             |
 
 ## Design notes
 
