@@ -57,17 +57,17 @@ type Actor struct {
 //
 //	Schemas   what the source data looks like
 //	Specs     what the target data looks like
-//	Xform     how to map between the two
+//	Transform     how to map between the two
 //	Datasets  the actual data going through the pipe
 //
 // The Specs were missing until it was noticed that spec validation *withholds*
 // payloads — so a changed target contract changes the output, which makes it an
 // input whether or not it was written down.
 type InputVersions struct {
-	Schemas  map[string]string `json:"schemas"`
-	Specs    map[string]string `json:"specs"`
-	Xform    string            `json:"xform"`
-	Datasets map[string]string `json:"datasets"`
+	Schemas   map[string]string `json:"schemas"`
+	Specs     map[string]string `json:"specs"`
+	Transform string            `json:"transform"`
+	Datasets  map[string]string `json:"datasets"`
 
 	// Digest is the hash of the four above: the Run's identity. Two Runs with
 	// the same digest are guaranteed to have produced the same output.
@@ -76,7 +76,7 @@ type InputVersions struct {
 
 // CurrentRecordVersion is stamped on new Runs. Bump it whenever the record gains
 // or changes a field, and note the difference where readers branch.
-const CurrentRecordVersion = 5
+const CurrentRecordVersion = 6
 
 // Source is how much data the Run actually read. It is recorded rather than
 // inferred from an Output's counts: derivation means no Output's row count
@@ -150,21 +150,21 @@ type RunRequest struct {
 	Actor   Actor
 	Firm    string
 
-	Schemas  map[string]*SourceSchema // input alias -> schema
-	Datasets map[string]*Dataset      // input alias -> dataset
-	Xform    *Xform
+	Schemas   map[string]*SourceSchema // input alias -> schema
+	Datasets  map[string]*Dataset      // input alias -> dataset
+	Transform *Transform
 
 	// Spec is Qniform's OpenAPI document: what the target will accept. An input
 	// rather than a dependency, because validating against it *withholds*
 	// payloads — a changed contract changes the output.
 	Spec *Spec
 
-	Prior []Reject // rejects carried in from ingest (coercion)
+	WithheldAtIngest []Reject // rows that failed coercion, before any rule saw them
 }
 
 // ExecuteRun is the pure function the whole system is built around:
 //
-//	Output = Run(SourceSchemas, TargetSpecs, Xforms, SourceDatasets)
+//	Output = Run(SourceSchemas, TargetSpecs, Transform, SourceDatasets)
 //
 // Everything it consumes is content-addressed and everything it decides —
 // including which identities to quarantine — is a function of those inputs, so
@@ -185,28 +185,28 @@ func ExecuteRun(eng *Engine, in RunRequest) (*Run, error) {
 		Nodes:         map[string]NodeStat{},
 		Target:        RunTarget{Kind: "preview", Firm: in.Firm},
 		Inputs: InputVersions{
-			Schemas:  map[string]string{},
-			Specs:    map[string]string{},
-			Datasets: map[string]string{},
-			Xform:    in.Xform.Hash(),
+			Schemas:   map[string]string{},
+			Specs:     map[string]string{},
+			Datasets:  map[string]string{},
+			Transform: in.Transform.Hash(),
 		},
 	}
 
 	inputViews := map[string]bool{}
-	for _, inp := range in.Xform.Inputs {
+	for _, inp := range in.Transform.Inputs {
 		ds, ok := in.Datasets[inp.As]
 		if !ok {
-			return nil, fmt.Errorf("xform declares input %q, which no dataset satisfies", inp.As)
+			return nil, fmt.Errorf("transform declares input %q, which no dataset satisfies", inp.As)
 		}
 		sc, ok := in.Schemas[inp.As]
 		if !ok {
 			return nil, fmt.Errorf("no schema for input %q", inp.As)
 		}
 		if sc.Ref() != inp.Schema {
-			return nil, fmt.Errorf("input %q: xform expects schema %s, dataset carries %s",
+			return nil, fmt.Errorf("input %q: transform expects schema %s, dataset carries %s",
 				inp.As, inp.Schema, sc.Ref())
 		}
-		if err := eng.Attach(inp.As, ds.StagePath); err != nil {
+		if err := eng.Attach(inp.As, ds.DataPath); err != nil {
 			return nil, err
 		}
 		inputViews[inp.As] = true
@@ -218,7 +218,7 @@ func ExecuteRun(eng *Engine, in RunRequest) (*Run, error) {
 	// Record the contract of every target this transform writes. Only those:
 	// endpoints it never touches are not inputs to it.
 	if in.Spec != nil {
-		for _, target := range in.Xform.Targets() {
+		for _, target := range in.Transform.Targets() {
 			h, err := in.Spec.HashFor(target)
 			if err != nil {
 				return nil, fmt.Errorf("recording the contract for %s: %w", target, err)
@@ -231,7 +231,7 @@ func ExecuteRun(eng *Engine, in RunRequest) (*Run, error) {
 	// mintRef applies a rule's prefix to a raw source key. A reference never
 	// restates the mint expression, so the two cannot drift apart.
 	mintOf := map[string]string{}
-	for _, r := range in.Xform.Rules {
+	for _, r := range in.Transform.Rules {
 		mintOf[r.Name] = r.Mints.Prefix
 	}
 	mintRef := func(rule, raw string) string { return mintOf[rule] + raw }
@@ -241,18 +241,18 @@ func ExecuteRun(eng *Engine, in RunRequest) (*Run, error) {
 	// single flat set is enough.
 	quarantined := map[string]RejectRef{}
 
-	for _, rule := range in.Xform.Ordered() {
+	for _, rule := range in.Transform.Ordered() {
 		table := "rule_" + rule.Name
 
 		t0 := time.Now()
-		n, err := eng.Materialise(table, in.Xform.Models[rule.Model])
+		n, err := eng.Materialise(table, in.Transform.SQL[rule.SQLFile])
 		if err != nil {
 			return nil, err
 		}
 		// A node's hash folds in its inputs, so changing one rule invalidates
 		// only what depends on it rather than the world (design.md §4).
 		run.Nodes[rule.Name] = NodeStat{
-			Hash:   hashJSON([]string{in.Xform.Models[rule.Model], run.Inputs.Digest}),
+			Hash:   hashJSON([]string{in.Transform.SQL[rule.SQLFile], run.Inputs.Digest}),
 			Cached: false, Rows: n, Ms: time.Since(t0).Milliseconds(),
 		}
 
@@ -277,7 +277,7 @@ func ExecuteRun(eng *Engine, in RunRequest) (*Run, error) {
 			quarantined[c.Identity] = RejectRef{Output: rule.Name, Identity: c.Identity}
 		}
 
-		compiled, err := eng.Query(rule.Payload.Compile(table))
+		compiled, err := eng.Query(rule.Binding.Compile(table))
 		if err != nil {
 			return nil, fmt.Errorf("rule %s: %w", rule.Name, err)
 		}
@@ -285,7 +285,7 @@ func ExecuteRun(eng *Engine, in RunRequest) (*Run, error) {
 		// entity always agree about which source row spoke for it.
 		byID := map[string]map[string]any{}
 		for _, r := range compiled {
-			id, ok := r[rule.Payload.RowKey].(string)
+			id, ok := r[rule.Binding.RowKey].(string)
 			if !ok {
 				continue
 			}
@@ -312,7 +312,7 @@ func ExecuteRun(eng *Engine, in RunRequest) (*Run, error) {
 				quarantined[e.Identity] = RejectRef{Output: rule.Name, Identity: e.Identity}
 				continue
 			}
-			res.Payloads = append(res.Payloads, rule.Payload.Payload(row, mintRef))
+			res.Payloads = append(res.Payloads, rule.Binding.Build(row, mintRef))
 		}
 
 		// Check the batch against the target's own spec. A payload that fails
@@ -333,7 +333,7 @@ func ExecuteRun(eng *Engine, in RunRequest) (*Run, error) {
 				}
 				kept := res.Payloads[:0]
 				for _, p := range res.Payloads {
-					id, _ := p.Get(rule.Payload.RowKey)
+					id, _ := p.Get(rule.Binding.RowKey)
 					if s, _ := id.(string); bad[s] {
 						quarantined[s] = RejectRef{Output: rule.Name, Identity: s}
 						continue
@@ -360,12 +360,12 @@ func ExecuteRun(eng *Engine, in RunRequest) (*Run, error) {
 
 	// Coercion rejects belong to the Run, not to any rule: these rows failed
 	// before a rule saw them, so no rule is answerable for them.
-	run.WithheldAtIngest = in.Prior
+	run.WithheldAtIngest = in.WithheldAtIngest
 	if run.WithheldAtIngest == nil {
 		run.WithheldAtIngest = []Reject{}
 	}
-	run.Totals.Emitted += len(in.Prior)
-	run.Totals.Rejected += len(in.Prior)
+	run.Totals.Emitted += len(in.WithheldAtIngest)
+	run.Totals.Rejected += len(in.WithheldAtIngest)
 
 	run.FinishedAt = time.Now()
 	return run, nil
@@ -387,7 +387,7 @@ func checkColumnsAgainstTarget(eng *Engine, spec *Spec, rule Rule, table string)
 	if err != nil {
 		return err
 	}
-	used := rule.Payload.Columns()
+	used := rule.Binding.Columns()
 
 	var stray []string
 	for _, c := range cols {
@@ -447,8 +447,8 @@ func checkMintedPrefix(eng *Engine, rule Rule, table string) error {
 func referencesQuarantined(rule Rule, row map[string]any, q map[string]RejectRef,
 	mintRef func(string, string) string) (RejectRef, string) {
 
-	for _, name := range rule.Payload.fieldNames() {
-		b := rule.Payload.Fields[name]
+	for _, name := range rule.Binding.fieldNames() {
+		b := rule.Binding.Fields[name]
 		if b.References == "" {
 			continue
 		}
@@ -482,7 +482,7 @@ type entityRow struct {
 // Collapse groups a model's output on the declared identity column and checks the
 // declared conflict columns.
 //
-// The work is driven entirely by the declaration in xform.yaml, which is the
+// The work is driven entirely by the declaration in transform.yaml, which is the
 // point of declaring identity separately from minting it: one implementation
 // detects every entity's conflicts rather than each rule hand-rolling its own.
 func Collapse(rows []map[string]any, rule Rule) ([]entityRow, []Reject) {
@@ -549,7 +549,7 @@ func Collapse(rows []map[string]any, rule Rule) ([]entityRow, []Reject) {
 			}
 		}
 		if conflicted {
-			continue // quarantined: withheld, while the rest of the stage proceeds
+			continue // quarantined: withheld, while the rest of the rule proceeds
 		}
 
 		vals := map[string]any{}

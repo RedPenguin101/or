@@ -118,7 +118,7 @@ func (s *Spec) Operation(target string) (*jsonSchema, error) {
 	return nil, fmt.Errorf("%s %s has no request body schema", parts[0], path)
 }
 
-// ValidateBatch checks a stage's payloads against the operation's request body.
+// ValidateBatch checks one rule's payloads against the operation's request body.
 //
 // It covers what the spec states mechanically — item cap, required fields,
 // enums, unknown properties. Conditional rules stated only in prose (that

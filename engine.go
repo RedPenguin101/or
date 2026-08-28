@@ -29,9 +29,9 @@ func NewEngine() (*Engine, error) {
 
 func (e *Engine) Close() error { return e.db.Close() }
 
-// sqlType maps a logical type to its DuckDB column type. Staging is typed —
+// sqlType maps a logical type to its DuckDB column type. The Dataset is typed —
 // coercion has already happened, so carrying everything as text past this point
-// would throw away the work and push casts into every model.
+// would throw away the work and push casts into every rule.
 func sqlType(f Field) string {
 	switch f.Type {
 	case TypeInteger:
@@ -47,9 +47,13 @@ func sqlType(f Field) string {
 	}
 }
 
-// WriteStage materialises coerced rows as Parquet. DuckDB's own COPY does the
-// writing, so no separate Parquet library enters the build.
-func (e *Engine) WriteStage(path string, schema *SourceSchema, rows [][]*string, srcRows []int) error {
+// WriteDataset materialises the coerced rows as Parquet. That file IS the
+// Dataset — the delivered CSV was only transport — so there is no staging step
+// here and nothing between the two to name.
+//
+// DuckDB's own COPY does the writing, so no separate Parquet library enters the
+// build.
+func (e *Engine) WriteDataset(path string, schema *SourceSchema, rows [][]*string, srcRows []int) error {
 	cols := make([]string, 0, len(schema.Fields)+1)
 	for _, f := range schema.Fields {
 		cols = append(cols, fmt.Sprintf("%s %s", quoteIdent(f.Name), sqlType(f)))
@@ -58,7 +62,7 @@ func (e *Engine) WriteStage(path string, schema *SourceSchema, rows [][]*string,
 	// value can always be traced back to the cell it came from.
 	cols = append(cols, "__row INTEGER")
 
-	tmp := "stage_tmp"
+	tmp := "ingest_tmp"
 	if _, err := e.db.Exec("DROP TABLE IF EXISTS " + tmp); err != nil {
 		return err
 	}
@@ -99,7 +103,7 @@ func (e *Engine) WriteStage(path string, schema *SourceSchema, rows [][]*string,
 	return err
 }
 
-// Attach exposes a staged Parquet file to the models under a view name.
+// Attach exposes a Dataset's Parquet file to the rules under a view name.
 func (e *Engine) Attach(view, parquetPath string) error {
 	_, err := e.db.Exec(fmt.Sprintf(
 		"CREATE OR REPLACE VIEW %s AS SELECT * FROM read_parquet('%s')", quoteIdent(view), parquetPath))

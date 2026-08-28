@@ -51,7 +51,7 @@ func main() {
 	}
 
 	for name, mt := range types {
-		log.Printf("migration type %s: %d schema(s), xform %q", name, len(mt.Schemas), xformName(mt))
+		log.Printf("migration type %s: %d schema(s), transform %q", name, len(mt.Schemas), transformName(mt))
 	}
 
 	addr := envOr("ONRAMP_ADDR", ":8090")
@@ -61,11 +61,11 @@ func main() {
 	}
 }
 
-func xformName(mt *MigrationType) string {
-	if mt.Xform == nil {
+func transformName(mt *MigrationType) string {
+	if mt.Transform == nil {
 		return "(none)"
 	}
-	return mt.Xform.Name
+	return mt.Transform.Name
 }
 
 func envOr(k, def string) string {

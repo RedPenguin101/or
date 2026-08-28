@@ -2,7 +2,7 @@
 --
 -- The same REP-ID appears on many accounts with inconsistent REP-NAME
 -- spellings. The identity is the ID; the name disagreement is surfaced by the
--- conflict rule in xform.yaml rather than silently resolved here, because
+-- conflict rule in transform.yaml rather than silently resolved here, because
 -- picking a spelling is a decision someone has to own and record.
 
 SELECT

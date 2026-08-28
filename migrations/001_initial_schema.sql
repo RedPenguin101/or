@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS datasets (
     schema_ref  TEXT        NOT NULL,
     hash        TEXT        NOT NULL,   -- content hash of the delivered bytes
     raw_path    TEXT        NOT NULL,   -- never rewritten: the landed evidence
-    stage_path  TEXT        NOT NULL,
+    data_path   TEXT        NOT NULL,   -- the Parquet that IS the dataset
     rows        INTEGER     NOT NULL,
     rejected    INTEGER     NOT NULL,
     rejects     JSONB       NOT NULL DEFAULT '[]',
@@ -85,5 +85,12 @@ BEGIN
         WHERE table_name = 'runs' AND column_name = 'triple'
     ) THEN
         ALTER TABLE runs RENAME COLUMN triple TO digest;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'datasets' AND column_name = 'stage_path'
+    ) THEN
+        ALTER TABLE datasets RENAME COLUMN stage_path TO data_path;
     END IF;
 END $$;

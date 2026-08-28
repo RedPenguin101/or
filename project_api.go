@@ -17,10 +17,10 @@ func (a *App) registerProjectRoutes(mux *http.ServeMux) {
 }
 
 type migrationTypeView struct {
-	Name    string   `json:"name"`
-	Title   string   `json:"title"`
-	Schemas []string `json:"schemas"`
-	Xform   string   `json:"xform"`
+	Name      string   `json:"name"`
+	Title     string   `json:"title"`
+	Schemas   []string `json:"schemas"`
+	Transform string   `json:"transform"`
 }
 
 func (a *App) listMigrationTypes(w http.ResponseWriter, r *http.Request) {
@@ -33,8 +33,8 @@ func (a *App) listMigrationTypes(w http.ResponseWriter, r *http.Request) {
 	for _, n := range names {
 		mt := a.Types[n]
 		v := migrationTypeView{Name: mt.Name, Title: mt.Title, Schemas: mt.SchemaRefs()}
-		if mt.Xform != nil {
-			v.Xform = mt.Xform.Name
+		if mt.Transform != nil {
+			v.Transform = mt.Transform.Name
 		}
 		out = append(out, v)
 	}

@@ -7,11 +7,11 @@ import (
 	"sort"
 )
 
-// PayloadSpec is the last leg of a rule: turning the flat rows its SQL produced
-// into the nested JSON the target accepts.
+// TargetBinding is the last leg of a rule: binding the flat rows its SQL produced
+// to the nested JSON the target accepts.
 //
 // It lives on the rule rather than on the endpoint so a rule carries its whole
-// chain — source, SQL, payload — and nothing downstream reshapes what it makes.
+// chain — source, SQL, binding — and nothing downstream reshapes what it makes.
 // Two rules writing the same endpoint each own their own, which is why a rule
 // that always produces one role can state that role as a literal instead of
 // carrying a column to vary it.
@@ -20,7 +20,7 @@ import (
 // name of the field it becomes, and absence is a NULL in the model, which is
 // omitted by a fixed rule nobody can configure. What is left has no expression
 // syntax, so it cannot express a business decision.
-type PayloadSpec struct {
+type TargetBinding struct {
 	RowKey string          `yaml:"row_key" json:"row_key"`
 	Fields map[string]Bind `yaml:"fields"  json:"fields"`
 	Order  []string        `yaml:"-"       json:"order"` // authored order, for display
@@ -44,7 +44,7 @@ type Bind struct {
 	Object map[string]any `yaml:"object" json:"object,omitempty"`
 }
 
-func (p *PayloadSpec) normalise() {
+func (p *TargetBinding) normalise() {
 	if p.RowKey == "" {
 		p.RowKey = "code"
 	}
@@ -52,9 +52,9 @@ func (p *PayloadSpec) normalise() {
 
 // SetOrder records the authored field order from the raw YAML node, so an
 // emitted payload reads the way its author wrote it.
-func (p *PayloadSpec) SetOrder(order []string) { p.Order = order }
+func (p *TargetBinding) SetOrder(order []string) { p.Order = order }
 
-func (p *PayloadSpec) validate(rule string, _ map[string]bool) error {
+func (p *TargetBinding) validate(rule string, _ map[string]bool) error {
 	if len(p.Fields) == 0 {
 		return fmt.Errorf("rule %q has no payload fields", rule)
 	}
@@ -76,7 +76,7 @@ func (p *PayloadSpec) validate(rule string, _ map[string]bool) error {
 	return nil
 }
 
-func (p *PayloadSpec) fieldNames() []string {
+func (p *TargetBinding) fieldNames() []string {
 	if len(p.Order) == len(p.Fields) {
 		return p.Order
 	}
@@ -91,7 +91,7 @@ func (p *PayloadSpec) fieldNames() []string {
 // Columns is every model column this payload reads: the fields it sends and any
 // column a nesting key comes from. A column outside this set does no work, which
 // is how a vocabulary starts to grow between source and target.
-func (p *PayloadSpec) Columns() map[string]bool {
+func (p *TargetBinding) Columns() map[string]bool {
 	used := map[string]bool{p.RowKey: true}
 	for _, name := range p.fieldNames() {
 		b := p.Fields[name]
@@ -108,7 +108,7 @@ func (p *PayloadSpec) Columns() map[string]bool {
 
 // Compile builds the SELECT that feeds this payload: the columns it reads, in a
 // fixed order. A plain projection — there is nothing left to evaluate.
-func (p *PayloadSpec) Compile(table string) string {
+func (p *TargetBinding) Compile(table string) string {
 	var sel []string
 	seen := map[string]bool{}
 	add := func(col string) {
@@ -136,9 +136,9 @@ func (p *PayloadSpec) Compile(table string) string {
 		joinComma(sel), quoteIdent(table), quoteIdent(p.RowKey), quoteIdent("__row"))
 }
 
-// Payload turns one compiled row into the request body item. mintRef applies a
+// Build turns one compiled row into the request body item. mintRef applies a
 // referenced rule's prefix to a raw source key.
-func (p *PayloadSpec) Payload(row map[string]any, mintRef func(rule string, raw string) string) *OrderedMap {
+func (p *TargetBinding) Build(row map[string]any, mintRef func(rule string, raw string) string) *OrderedMap {
 	out := NewOrderedMap()
 	for _, name := range p.fieldNames() {
 		b := p.Fields[name]
@@ -188,7 +188,7 @@ func joinComma(ss []string) string {
 	return out
 }
 
-// OrderedMap keeps emitted payloads in the order the payload spec declares them.
+// OrderedMap keeps emitted payloads in the order the binding declares them.
 // Field order carries no meaning to Qniform but a great deal to a human reading
 // a diff, and the whole product is about making that reading easy.
 type OrderedMap struct {

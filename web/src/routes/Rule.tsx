@@ -10,13 +10,13 @@ import { ErrorNote, Panel, Pill } from "../components/ui";
 // SQL would tell you.
 export default function RuleView() {
   const { id = "", rule = "" } = useParams();
-  const xform = useQuery({ queryKey: ["p", id, "xform"], queryFn: () => api.xform(id) });
+  const transform = useQuery({ queryKey: ["p", id, "transform"], queryFn: () => api.transform(id) });
 
-  const r = xform.data?.rules.find((x) => x.name === rule);
-  if (xform.isSuccess && !r) return <ErrorNote error={`No rule ${rule}`} />;
-  if (!r || !xform.data) return null;
+  const r = transform.data?.rules.find((x) => x.name === rule);
+  if (transform.isSuccess && !r) return <ErrorNote error={`No rule ${rule}`} />;
+  if (!r || !transform.data) return null;
 
-  const fields = r.payload.order ?? Object.keys(r.payload.fields);
+  const fields = r.binding.order ?? Object.keys(r.binding.fields);
 
   return (
     <div className="space-y-5">
@@ -77,7 +77,7 @@ export default function RuleView() {
         </div>
       </Panel>
 
-      <Panel title="Fields sent to Qniform" aside={`row key: ${r.payload.row_key}`}>
+      <Panel title="Fields sent to Qniform" aside={`row key: ${r.binding.row_key}`}>
         <table className="w-full text-xs">
           <thead className="text-left text-ink-soft">
             <tr className="border-b border-line">
@@ -87,7 +87,7 @@ export default function RuleView() {
           </thead>
           <tbody>
             {fields.map((name) => {
-              const b = r.payload.fields[name];
+              const b = r.binding.fields[name];
               return (
                 <tr key={name} className="border-b border-line/60 align-top">
                   <td className="mono py-1.5 pr-3 whitespace-nowrap">{name}</td>
@@ -125,18 +125,18 @@ export default function RuleView() {
         </table>
       </Panel>
 
-      <Panel title="How it is computed" aside={`${r.model}.sql`}>
+      <Panel title="How it is computed" aside={`${r.sql}.sql`}>
         <p className="mb-3 max-w-3xl text-xs text-ink-soft">
           Every decision this rule makes is here. Columns are named for the Qniform fields they
           become, and a NULL means the field is left out — so nothing downstream renames,
           reinterprets, or conditionally drops what this produces.
         </p>
         <pre className="mono overflow-x-auto rounded-md border border-line bg-surface p-3 text-[11px] leading-relaxed">
-          {xform.data.models[r.model]}
+          {transform.data.sql[r.sql]}
         </pre>
-        {xform.data.model_deps[r.model]?.length ? (
+        {transform.data.sql_reads[r.sql]?.length ? (
           <div className="mono mt-1 text-[11px] text-ink-soft">
-            reads {xform.data.model_deps[r.model].join(", ")}
+            reads {transform.data.sql_reads[r.sql].join(", ")}
           </div>
         ) : null}
       </Panel>

@@ -83,7 +83,7 @@ only (`db.go`, `migrations/001_initial_schema.sql`); dataset content lands as Pa
    **Ingest decodes and types; it never derives.** No joins, no enrichment, no minting — anything
    that needs to know about the *target* is a rule. The typed table on the far side of ingest **is**
    the Dataset; the CSV was only transport, and there is no staging layer to name.
-3. `xform.go` — **a Rule owns its whole chain**: the schemas it reads (`from`), the target endpoint
+3. `transform.go` — **a Rule owns its whole chain**: the schemas it reads (`from`), the target endpoint
    it writes (`to`), the identity it mints (`mints`), the SQL that flattens (`model`), and the
    payload shape (`payload`). There is no Output, no entities section and no `after:` — a rule names
    Qniform's endpoint directly, conflict policy lives on the mint, and load order is Qniform's own
@@ -91,7 +91,7 @@ only (`db.go`, `migrations/001_initial_schema.sql`); dataset content lands as Pa
    in SQL**: identity drives dedupe, conflicts, references, the cascade, run diffing and slice
    closure, and all of those need it without executing it. Two rules minting one entity must have
    disjoint prefixes (checked at load); `checkMintedPrefix` verifies the SQL agrees with the
-   declaration. **Every model belongs to exactly one Rule** (`Validate` rejects an unclaimed one),
+   declaration. **Every SQL file belongs to exactly one Rule** (`Validate` rejects an unclaimed one),
    and an **entity** is the generated union of what its rules produce (`Engine.UnionInto`), never a
    hand-written model. Both rules exist because an unclaimed "preparation" model is where rule logic
    hides while the rule page shows a thin projection — which is exactly what happened with the
@@ -99,10 +99,10 @@ only (`db.go`, `migrations/001_initial_schema.sql`); dataset content lands as Pa
    schemas to one Output, carrying the prose that makes the mapping legible without reading SQL.
    Rules are declared, not inferred. Models no Rule claims are shared preparation and are
    implementation. Do not reintroduce "stage" or "emission" for these — "stage" collided with a
-   Reject's `phase`, which is a different axis entirely. The rules are a *directory* (`migration_types/FAS/xforms/fas-accounts/`): a YAML
-   manifest, SQL models, YAML emitters. Model order is inferred from the SQL; entity identity is
+   Reject's `phase`, which is a different axis entirely. The rules are a *directory* (`migration_types/FAS/transforms/fas-accounts/`): a YAML
+   manifest and one SQL file per rule under `sql/`. Model order is inferred from the SQL; entity identity is
    *declared*.
-4. `emitter.go` — the payload shape, mechanics only and deliberately incapable of more. **There is no intermediate
+4. `binding.go` — the target binding, mechanics only and deliberately incapable of more. **There is no intermediate
    model**: a rule produces the target's own fields, named as the target names them, and
    `checkColumnsAgainstTarget` in `apply.go` fails any run whose columns are neither fields of the
    target endpoint, nor read for a nesting key, nor `__`-prefixed. The emitter has **no expression
@@ -134,7 +134,7 @@ only (`db.go`, `migrations/001_initial_schema.sql`); dataset content lands as Pa
 
 **Run records are immutable and never migrated.** They are audit artifacts, read years after the
 writing code has moved on, so older shapes stay on disk forever and the obligation is on the
-reader. New Runs carry `record_version` (absent means 0; currently 5); bump `CurrentRecordVersion` in
+reader. New Runs carry `record_version` (absent means 0; currently 6); bump `CurrentRecordVersion` in
 `run.go` whenever the record gains or renames a field, and adapt every past shape in
 `normalizeRun` (`web/src/api.ts`) — one place, not conditionals scattered through components. A reader that meets an absent field **omits it rather than
 reconstructing it** — see `web/src/components/Flow.tsx`, which draws no source counts for a v0 run
@@ -230,3 +230,18 @@ migration target and the shape OnRamp must produce.
 - `~/Code/qniform6/CLAUDE.md` — its architecture and conventions; useful context for what
   "loaded into Qniform" means, and a reference for house style.
 - `~/Code/qniform6/devnotes/` — domain notes on regulatory and accounting behaviour.
+
+## Vocabulary that has already been settled
+
+These were renamed deliberately; do not reintroduce the old words.
+
+| Gone | Use | Why |
+|---|---|---|
+| Xform | **Transform** | no need to abbreviate until it hurts |
+| Emitter, PayloadSpec | **TargetBinding** | it binds flat rows to the target's shape |
+| Model | **the rule's SQL** (`sql/<name>.sql`) | a rule has exactly one; "model" implied a separate layer |
+| Stage, staging | **Dataset** / `DataPath` | the coerced table *is* the Dataset; the CSV was transport |
+| Output (declared) | **target endpoint** | no OnRamp object between a rule and Qniform |
+| stage (on a Reject) | **phase** | collided with the emissions, which were also "stages" |
+| Prior | **WithheldAtIngest** | says what it holds |
+| triple | **digest** | there are four inputs, not three |

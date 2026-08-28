@@ -20,9 +20,9 @@ type Dataset struct {
 	SchemaRef string `json:"schema_ref"`
 	Hash      string `json:"hash"` // content hash of the raw bytes: the Dataset's version
 	RawPath   string `json:"raw_path"`
-	Rows      int    `json:"rows"`       // rows that coerced cleanly and landed
-	Rejected  int    `json:"rejected"`   // rows withheld at coercion
-	StagePath string `json:"stage_path"` // Parquet of the typed rows
+	Rows      int    `json:"rows"`      // rows that coerced cleanly and landed
+	Rejected  int    `json:"rejected"`  // rows withheld at coercion
+	DataPath  string `json:"data_path"` // Parquet of the typed rows: the Dataset itself
 }
 
 // Ingest reads a delivered file against its schema, lands the raw bytes, coerces
@@ -118,8 +118,8 @@ func Ingest(eng *Engine, store string, schema *SourceSchema, name string, raw []
 		srcRows = append(srcRows, line)
 	}
 
-	stagePath := filepath.Join(dir, "staged.parquet")
-	if err := eng.WriteStage(stagePath, schema, typed, srcRows); err != nil {
+	dataPath := filepath.Join(dir, "rows.parquet")
+	if err := eng.WriteDataset(dataPath, schema, typed, srcRows); err != nil {
 		return nil, nil, err
 	}
 
@@ -130,7 +130,7 @@ func Ingest(eng *Engine, store string, schema *SourceSchema, name string, raw []
 		RawPath:   rawPath,
 		Rows:      len(typed),
 		Rejected:  len(rejects),
-		StagePath: stagePath,
+		DataPath:  dataPath,
 	}, rejects, nil
 }
 

@@ -13,7 +13,7 @@ func runFAS(t *testing.T) *Run {
 	if err != nil {
 		t.Fatalf("schema: %v", err)
 	}
-	x, err := LoadXform("migration_types/FAS/xforms/fas-accounts")
+	x, err := LoadTransform("migration_types/FAS/transforms/fas-accounts")
 	if err != nil {
 		t.Fatalf("xform: %v", err)
 	}
@@ -29,9 +29,9 @@ func runFAS(t *testing.T) *Run {
 	run, err := ExecuteRun(eng, RunRequest{
 		Number: 1, Project: "fas-demo", Reason: "walking skeleton",
 		Actor: Actor{Kind: "test", ID: "go"}, Firm: "PERSUS",
-		Schemas:  map[string]*SourceSchema{"account_master": schema},
-		Datasets: map[string]*Dataset{"account_master": ds},
-		Xform:    x, Prior: prior, Spec: mustSpec(t),
+		Schemas:   map[string]*SourceSchema{"account_master": schema},
+		Datasets:  map[string]*Dataset{"account_master": ds},
+		Transform: x, WithheldAtIngest: prior, Spec: mustSpec(t),
 	})
 	if err != nil {
 		t.Fatalf("apply: %v", err)
@@ -251,17 +251,17 @@ func TestRuleColumnsMustBeTargetFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	x, err := LoadXform("migration_types/FAS/xforms/fas-accounts")
+	x, err := LoadTransform("migration_types/FAS/transforms/fas-accounts")
 	if err != nil {
 		t.Fatal(err)
 	}
 	// A column that is not a field of PUT /firms/{firm}/accounts, is not read
 	// for a nesting key, and is not infrastructure.
-	x.Models["accounts"] = strings.Replace(x.Models["accounts"],
+	x.SQL["accounts"] = strings.Replace(x.SQL["accounts"],
 		"    __row\nFROM account_master",
 		"    \"STATUS-CD\" AS status,\n    __row\nFROM account_master", 1)
-	if !strings.Contains(x.Models["accounts"], "AS status") {
-		t.Fatal("test fixture did not apply; the model text must have changed")
+	if !strings.Contains(x.SQL["accounts"], "AS status") {
+		t.Fatal("test fixture did not apply; the SQL text must have changed")
 	}
 
 	raw, err := os.ReadFile("testdata/fas_account_master.csv")
@@ -275,10 +275,10 @@ func TestRuleColumnsMustBeTargetFields(t *testing.T) {
 	}
 	_, err = ExecuteRun(eng, RunRequest{
 		Number: 1, Project: "fas-demo", Reason: "guard", Actor: Actor{Kind: "test", ID: "go"},
-		Firm:     "PERSUS",
-		Schemas:  map[string]*SourceSchema{"account_master": schema},
-		Datasets: map[string]*Dataset{"account_master": ds},
-		Xform:    x, Prior: prior, Spec: mustSpec(t),
+		Firm:      "PERSUS",
+		Schemas:   map[string]*SourceSchema{"account_master": schema},
+		Datasets:  map[string]*Dataset{"account_master": ds},
+		Transform: x, WithheldAtIngest: prior, Spec: mustSpec(t),
 	})
 	if err == nil {
 		t.Fatal("a column that means nothing to the target must fail the run")
@@ -315,7 +315,7 @@ func TestTargetSpecIsPartOfTheContract(t *testing.T) {
 	item.Required = append(item.Required, "pre_name")
 
 	schema, _ := LoadSourceSchema("migration_types/FAS/schemas/account-master.yaml")
-	x, _ := LoadXform("migration_types/FAS/xforms/fas-accounts")
+	x, _ := LoadTransform("migration_types/FAS/transforms/fas-accounts")
 	raw, _ := os.ReadFile("testdata/fas_account_master.csv")
 	eng := testEngine(t)
 	ds, prior, err := Ingest(eng, t.TempDir(), schema, "account_master", raw)
@@ -325,9 +325,9 @@ func TestTargetSpecIsPartOfTheContract(t *testing.T) {
 	changed, err := ExecuteRun(eng, RunRequest{
 		Number: 1, Project: "fas-demo", Reason: "narrowed contract",
 		Actor: Actor{Kind: "test", ID: "go"}, Firm: "PERSUS",
-		Schemas:  map[string]*SourceSchema{"account_master": schema},
-		Datasets: map[string]*Dataset{"account_master": ds},
-		Xform:    x, Prior: prior, Spec: spec,
+		Schemas:   map[string]*SourceSchema{"account_master": schema},
+		Datasets:  map[string]*Dataset{"account_master": ds},
+		Transform: x, WithheldAtIngest: prior, Spec: spec,
 	})
 	if err != nil {
 		t.Fatal(err)

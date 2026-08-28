@@ -15,7 +15,7 @@ export default function SchemaView() {
 
   const schemas = useQuery({ queryKey: ["p", id, "schemas"], queryFn: () => api.schemas(id) });
   const datasets = useQuery({ queryKey: ["p", id, "ds"], queryFn: () => api.datasets(id) });
-  const xform = useQuery({ queryKey: ["p", id, "xform"], queryFn: () => api.xform(id) });
+  const transform = useQuery({ queryKey: ["p", id, "transform"], queryFn: () => api.transform(id) });
 
   const upload = useMutation({
     mutationFn: (file: File) => {
@@ -30,7 +30,7 @@ export default function SchemaView() {
 
   const s = schemas.data?.find((x) => `${x.source_system}/${x.schema}` === schemaRef);
   const mine = datasets.data?.filter((d) => d.schema_ref === schemaRef) ?? [];
-  const feeds = xform.data?.rules.filter((r) => r.from.includes(schemaRef)) ?? [];
+  const feeds = transform.data?.rules.filter((r) => r.from.includes(schemaRef)) ?? [];
 
   if (schemas.isSuccess && !s) return <ErrorNote error={`No schema ${schemaRef} in this project`} />;
 

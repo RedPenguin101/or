@@ -62,7 +62,7 @@ export default function RunView() {
           </div>
           <div>
             <div className="mb-1 text-ink-soft">Xform</div>
-            <Hash value={r.inputs.xform} />
+            <Hash value={r.inputs.transform} />
           </div>
           <div>
             <div className="mb-1 text-ink-soft">Run identity</div>

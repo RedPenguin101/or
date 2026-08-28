@@ -11,18 +11,19 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// An Xform is the third input to Apply(). It is a directory, not a file: models
-// are SQL and want to be SQL — diffable, highlighted, and readable by the
-// client's own data people (design.md §3).
-type Xform struct {
-	Name        string  `yaml:"xform"       json:"name"`
+// A Transform is how the source maps to the target: the third of a Run's four
+// inputs. It is a directory, not a file, because SQL wants to be SQL —
+// diffable, highlighted, and readable by the client's own data people
+// (design.md §3).
+type Transform struct {
+	Name        string  `yaml:"transform"   json:"name"`
 	Version     int     `yaml:"version"     json:"version"`
 	Description string  `yaml:"description" json:"description"`
 	Inputs      []Input `yaml:"inputs"      json:"inputs"`
 	Rules       []Rule  `yaml:"rules"       json:"rules"`
 
-	Models map[string]string `yaml:"-" json:"models"` // name -> SQL
-	Dir    string            `yaml:"-" json:"-"`
+	SQL map[string]string `yaml:"-" json:"sql"` // file stem -> the SQL text
+	Dir string            `yaml:"-" json:"-"`
 }
 
 // Input is declared as a list even when it holds one entry, so nothing can grow
@@ -42,12 +43,12 @@ type Rule struct {
 	Name    string   `yaml:"name"    json:"name"`
 	Title   string   `yaml:"title"   json:"title"`
 	Summary string   `yaml:"summary" json:"summary"`
-	From    []string `yaml:"from"    json:"from"`  // Source Schema refs
-	To      string   `yaml:"to"      json:"to"`    // target endpoint, "PUT /parties"
-	Model   string   `yaml:"model"   json:"model"` // the .sql that flattens it
+	From    []string `yaml:"from" json:"from"` // Source Schema refs
+	To      string   `yaml:"to"   json:"to"`   // target endpoint, "PUT /parties"
+	SQLFile string   `yaml:"sql"  json:"sql"`  // the .sql under sql/ that flattens it
 
-	Mints   Mint        `yaml:"mints"   json:"mints"`
-	Payload PayloadSpec `yaml:"payload" json:"payload"`
+	Mints   Mint          `yaml:"mints"   json:"mints"`
+	Binding TargetBinding `yaml:"binding" json:"binding"`
 }
 
 // Mint declares how a rule constructs the identities it produces.
@@ -92,36 +93,36 @@ func (m Mint) IdentityColumn() string {
 	return "code"
 }
 
-func LoadXform(dir string) (*Xform, error) {
-	b, err := os.ReadFile(filepath.Join(dir, "xform.yaml"))
+func LoadTransform(dir string) (*Transform, error) {
+	b, err := os.ReadFile(filepath.Join(dir, "transform.yaml"))
 	if err != nil {
 		return nil, err
 	}
-	var x Xform
+	var x Transform
 	if err := yaml.Unmarshal(b, &x); err != nil {
-		return nil, fmt.Errorf("xform.yaml: %w", err)
+		return nil, fmt.Errorf("transform.yaml: %w", err)
 	}
 	x.Dir = dir
-	x.Models = map[string]string{}
+	x.SQL = map[string]string{}
 
-	sqls, _ := filepath.Glob(filepath.Join(dir, "models", "*.sql"))
+	sqls, _ := filepath.Glob(filepath.Join(dir, "sql", "*.sql"))
 	for _, p := range sqls {
 		src, err := os.ReadFile(p)
 		if err != nil {
 			return nil, err
 		}
-		x.Models[strings.TrimSuffix(filepath.Base(p), ".sql")] = string(src)
+		x.SQL[strings.TrimSuffix(filepath.Base(p), ".sql")] = string(src)
 	}
 	for i := range x.Rules {
-		x.Rules[i].Payload.normalise()
+		x.Rules[i].Binding.normalise()
 	}
 	// yaml.v3 loses map order, so recover each payload's authored field order
 	// from the raw node: an emitted payload should read the way it was written.
 	var doc yaml.Node
 	if err := yaml.Unmarshal(b, &doc); err == nil {
-		for i, order := range payloadFieldOrder(&doc) {
+		for i, order := range bindingFieldOrder(&doc) {
 			if i < len(x.Rules) {
-				x.Rules[i].Payload.SetOrder(order)
+				x.Rules[i].Binding.SetOrder(order)
 			}
 		}
 	}
@@ -131,12 +132,12 @@ func LoadXform(dir string) (*Xform, error) {
 	return &x, nil
 }
 
-func (x *Xform) Validate() error {
+func (x *Transform) Validate() error {
 	if x.Name == "" {
-		return fmt.Errorf("xform needs a name")
+		return fmt.Errorf("transform needs a name")
 	}
 	if len(x.Rules) == 0 {
-		return fmt.Errorf("xform has no rules")
+		return fmt.Errorf("transform has no rules")
 	}
 
 	byName := map[string]bool{}
@@ -156,16 +157,16 @@ func (x *Xform) Validate() error {
 		if _, err := loadRank(r.To); err != nil {
 			return fmt.Errorf("rule %q: %w", r.Name, err)
 		}
-		if _, ok := x.Models[r.Model]; !ok {
-			return fmt.Errorf("rule %q names model %q, which has no .sql file", r.Name, r.Model)
+		if _, ok := x.SQL[r.SQLFile]; !ok {
+			return fmt.Errorf("rule %q names sql/%s.sql, which does not exist", r.Name, r.SQLFile)
 		}
-		// Every model belongs to exactly one rule. An unclaimed model is where
+		// Every SQL file belongs to exactly one rule. An unclaimed one is where
 		// rule logic hides behind the label "implementation" while the rule page
 		// shows a thin projection.
-		if prev, dup := claimed[r.Model]; dup {
-			return fmt.Errorf("model %q is claimed by both rule %q and rule %q", r.Model, prev, r.Name)
+		if prev, dup := claimed[r.SQLFile]; dup {
+			return fmt.Errorf("sql/%s.sql is claimed by both rule %q and rule %q", r.SQLFile, prev, r.Name)
 		}
-		claimed[r.Model] = r.Name
+		claimed[r.SQLFile] = r.Name
 
 		if err := r.Mints.validate(r.Name); err != nil {
 			return err
@@ -175,14 +176,14 @@ func (x *Xform) Validate() error {
 		}
 		prefixes[r.Mints.Entity][r.Name] = r.Mints.Prefix
 
-		if err := r.Payload.validate(r.Name, byName); err != nil {
+		if err := r.Binding.validate(r.Name, byName); err != nil {
 			return err
 		}
 	}
 
-	for m := range x.Models {
-		if _, ok := claimed[m]; !ok {
-			return fmt.Errorf("model %q belongs to no rule; every model must belong to exactly one", m)
+	for f := range x.SQL {
+		if _, ok := claimed[f]; !ok {
+			return fmt.Errorf("sql/%s.sql belongs to no rule; every one must belong to exactly one", f)
 		}
 	}
 
@@ -210,7 +211,7 @@ func (x *Xform) Validate() error {
 
 	// Every reference must name a rule that mints something.
 	for _, r := range x.Rules {
-		for field, b := range r.Payload.Fields {
+		for field, b := range r.Binding.Fields {
 			if b.References == "" {
 				continue
 			}
@@ -253,7 +254,7 @@ func (m Mint) validate(rule string) error {
 }
 
 // Rule looks up a rule by name.
-func (x *Xform) Rule(name string) (Rule, bool) {
+func (x *Transform) Rule(name string) (Rule, bool) {
 	for _, r := range x.Rules {
 		if r.Name == name {
 			return r, true
@@ -263,7 +264,7 @@ func (x *Xform) Rule(name string) (Rule, bool) {
 }
 
 // Targets lists the distinct endpoints this transform writes to, in load order.
-func (x *Xform) Targets() []string {
+func (x *Transform) Targets() []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, r := range x.Ordered() {
@@ -277,7 +278,7 @@ func (x *Xform) Targets() []string {
 
 // Ordered returns the rules in the order they must run: by Qniform's load order,
 // then by name so two rules writing the same endpoint are stable.
-func (x *Xform) Ordered() []Rule {
+func (x *Transform) Ordered() []Rule {
 	out := append([]Rule(nil), x.Rules...)
 	sort.SliceStable(out, func(i, j int) bool {
 		ri, _ := loadRank(out[i].To)
@@ -290,29 +291,29 @@ func (x *Xform) Ordered() []Rule {
 	return out
 }
 
-// Hash is the Xform's version: the manifest and every model's SQL together.
+// Hash is the Transform's version: the manifest and every model's SQL together.
 // Changing one rule changes the transform, which is what keeps a Run's recorded
 // input versions honest.
-func (x *Xform) Hash() string {
+func (x *Transform) Hash() string {
 	type flat struct {
 		Manifest any
-		Models   map[string]string
+		SQL      map[string]string
 	}
 	m := map[string]any{
 		"name": x.Name, "version": x.Version,
 		"inputs": x.Inputs, "rules": x.Rules,
 	}
-	return hashJSON(flat{Manifest: m, Models: x.Models})
+	return hashJSON(flat{Manifest: m, SQL: x.SQL})
 }
 
 var identRe = regexp.MustCompile(`(?i)\b(?:from|join)\s+"?([a-z_][a-z0-9_]*)"?`)
 
-// ModelDeps reports which input views each model reads, for display. Models no
-// longer read one another — every rule reads the datasets directly — so this is
-// documentation rather than a dependency order.
-func (x *Xform) ModelDeps(inputs map[string]bool) map[string][]string {
+// SQLReads reports which input views each rule's SQL reads, for display. Rules
+// no longer read one another — every one reads the datasets directly — so this
+// is documentation rather than a dependency order.
+func (x *Transform) SQLReads(inputs map[string]bool) map[string][]string {
 	deps := map[string][]string{}
-	for name, sql := range x.Models {
+	for name, sql := range x.SQL {
 		seen := map[string]bool{}
 		for _, m := range identRe.FindAllStringSubmatch(sql, -1) {
 			if ref := m[1]; inputs[ref] && !seen[ref] {
@@ -325,9 +326,9 @@ func (x *Xform) ModelDeps(inputs map[string]bool) map[string][]string {
 	return deps
 }
 
-// payloadFieldOrder walks the manifest for each rule's payload.fields keys, in
+// bindingFieldOrder walks the manifest for each rule's binding.fields keys, in
 // document order.
-func payloadFieldOrder(doc *yaml.Node) [][]string {
+func bindingFieldOrder(doc *yaml.Node) [][]string {
 	if len(doc.Content) == 0 {
 		return nil
 	}
@@ -347,7 +348,7 @@ func payloadFieldOrder(doc *yaml.Node) [][]string {
 
 func fieldsOf(rule *yaml.Node) []string {
 	for i := 0; i+1 < len(rule.Content); i += 2 {
-		if rule.Content[i].Value != "payload" {
+		if rule.Content[i].Value != "binding" {
 			continue
 		}
 		p := rule.Content[i+1]

@@ -1,4 +1,4 @@
-xform: fas-accounts
+transform: fas-accounts
 version: 1
 description: >
   FAS Account Master to Qniform parties and accounts. FAS has no party file, so
@@ -29,12 +29,12 @@ rules:
       House accounts have no holder and are skipped.
     from: [FAS/ACCOUNT-MASTER]
     to: PUT /parties
-    model: party_customers
+    sql: customers
     mints:
       entity: party
       prefix: FAS_CUST_
       from: [ACCT-NO]
-    payload:
+    binding:
       row_key: code
       fields:
         code: {}
@@ -57,7 +57,7 @@ rules:
       party rather than being silently resolved.
     from: [FAS/ACCOUNT-MASTER]
     to: PUT /parties
-    model: party_reps
+    sql: reps
     mints:
       entity: party
       prefix: FAS_REP_
@@ -65,7 +65,7 @@ rules:
       conflict:
         on: [name]
         resolve: error
-    payload:
+    binding:
       row_key: code
       fields:
         code: {}
@@ -86,12 +86,12 @@ rules:
       means none rather than absent.
     from: [FAS/ACCOUNT-MASTER]
     to: PUT /firms/{firm}/accounts
-    model: accounts
+    sql: accounts
     mints:
       entity: account
       prefix: ""            # Qniform account codes are the FAS account numbers
       from: [ACCT-NO]
-    payload:
+    binding:
       row_key: code
       fields:
         code: {}

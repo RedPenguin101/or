@@ -195,8 +195,8 @@ the client's own data people (`design.md` §3). The manifest is small YAML. Spli
 each in its natural form.
 
 ```
-xforms/fas-accounts/
-  xform.yaml                    manifest: inputs, entities, stages, ordering
+transforms/fas-accounts/
+  transform.yaml                    manifest: inputs, entities, stages, ordering
   models/
     stg_account_master.sql      typed staging view over the raw dataset
     party_customers.sql         derived customer parties
@@ -227,7 +227,7 @@ is what makes it possible to:
 - drive impact analysis ("`REP-ID` changed type — 1 identity and 3 rules depend on it");
 - detect the set-level conflicts in §2.4 generically rather than per-rule.
 
-### 2.3 Sketch: `xform.yaml`
+### 2.3 Sketch: `transform.yaml`
 
 ```yaml
 xform: fas-accounts
@@ -308,7 +308,7 @@ vocabulary must reflect that rather than being binary.
 ```sql
 -- One party per distinct rep. The same REP-ID appears on many accounts with
 -- inconsistent REP-NAME spellings; the identity is the ID, and the name conflict
--- is surfaced by the `conflict` rule in xform.yaml rather than silently resolved.
+-- is surfaced by the `conflict` rule in transform.yaml rather than silently resolved.
 --
 -- ACCT-TYPE-CD = 'H' makes this a trading desk, not a rep, so the role differs.
 
@@ -644,7 +644,7 @@ implementation vocabulary, and none of them answers the question the page exists
 does this source become that target?**
 
 The missing concept was a **Rule**: a named group of transformation logic binding source schemas to
-one Output. It is declared in `xform.yaml` with a title and a summary, because the valuable part is
+one Output. It is declared in `transform.yaml` with a title and a summary, because the valuable part is
 the prose — *why the role depends on a sibling column*, *why a joint holding is one party* — and no
 analysis of the SQL produces that.
 
@@ -709,7 +709,7 @@ enforced:
 1. **Ingest does decoding and typing only** — trimming, encodings, null sentinels, type coercion.
    No joins, no enrichment, no derivation, no minting. If a step needs to know anything about the
    *target*, it is a rule.
-2. **Every model belongs to exactly one Rule.** `Xform.Validate` rejects an unclaimed model, which
+2. **Every model belongs to exactly one Rule.** `Transform.Validate` rejects an unclaimed model, which
    removes the place rule logic was able to hide.
 3. **An entity is the union of what its Rules produce**, generated rather than authored
    (`Engine.UnionInto`). `parties.sql` was a hand-written `UNION ALL` and is gone. Rules feeding

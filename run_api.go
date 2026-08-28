@@ -48,8 +48,8 @@ func (a *App) createRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	mt, err := a.Type(p.MigrationType)
-	if err != nil || mt.Xform == nil {
-		writeErr(w, http.StatusBadRequest, fmt.Errorf("no xform for migration type %s", p.MigrationType))
+	if err != nil || mt.Transform == nil {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("no transform for migration type %s", p.MigrationType))
 		return
 	}
 
@@ -67,14 +67,14 @@ func (a *App) createRun(w http.ResponseWriter, r *http.Request) {
 	// Bind each declared input to the most recent dataset for its schema.
 	in := RunRequest{
 		Project: p.Name, Reason: req.Reason,
-		Actor:    Actor{Kind: "user", ID: req.Actor},
-		Firm:     p.Firm,
-		Schemas:  map[string]*SourceSchema{},
-		Datasets: map[string]*Dataset{},
-		Xform:    mt.Xform,
-		Spec:     a.Spec,
+		Actor:     Actor{Kind: "user", ID: req.Actor},
+		Firm:      p.Firm,
+		Schemas:   map[string]*SourceSchema{},
+		Datasets:  map[string]*Dataset{},
+		Transform: mt.Transform,
+		Spec:      a.Spec,
 	}
-	for _, inp := range mt.Xform.Inputs {
+	for _, inp := range mt.Transform.Inputs {
 		for _, s := range schemas {
 			if s.Ref() == inp.Schema {
 				in.Schemas[inp.As] = s
@@ -84,13 +84,13 @@ func (a *App) createRun(w http.ResponseWriter, r *http.Request) {
 			if datasets[i].SchemaRef == inp.Schema {
 				d := datasets[i].Dataset
 				in.Datasets[inp.As] = &d
-				in.Prior = append(in.Prior, datasets[i].Rejects...)
+				in.WithheldAtIngest = append(in.WithheldAtIngest, datasets[i].Rejects...)
 				break
 			}
 		}
 		if in.Datasets[inp.As] == nil {
 			writeErr(w, http.StatusBadRequest,
-				fmt.Errorf("no dataset uploaded for %s, which the xform needs as %q", inp.Schema, inp.As))
+				fmt.Errorf("no dataset uploaded for %s, which the transform needs as %q", inp.Schema, inp.As))
 			return
 		}
 	}

@@ -50,7 +50,7 @@ var overpunch = map[byte]struct {
 	'N': {'5', true}, 'O': {'6', true}, 'P': {'7', true}, 'Q': {'8', true}, 'R': {'9', true},
 }
 
-// CoercionError is a row-level reject at stage "coercion". It carries enough to
+// CoercionError is a row-level reject at phase "coercion". It carries enough to
 // show the user the offending cell, not just the fact that something failed.
 type CoercionError struct {
 	Field string

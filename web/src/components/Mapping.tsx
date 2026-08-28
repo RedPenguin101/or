@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import type { Dataset, Schema, Xform } from "../api";
+import type { Dataset, Schema, Transform } from "../api";
 
 // Mapping is the project's headline: how source schemas become outputs.
 //
@@ -9,19 +9,19 @@ import type { Dataset, Schema, Xform } from "../api";
 // tables are implementation and deliberately absent; they live behind a rule.
 export default function Mapping({
   projectId,
-  xform,
+  transform,
   schemas,
   datasets,
 }: {
   projectId: string;
-  xform: Xform;
+  transform: Transform;
   schemas: Schema[];
   datasets: Dataset[];
 }) {
   const [hot, setHot] = useState<string | null>(null);
 
-  const rulesFor = (schemaRef: string) => xform.rules.filter((r) => r.from.includes(schemaRef));
-  const rulesTo = (target: string) => xform.rules.filter((r) => r.to === target);
+  const rulesFor = (schemaRef: string) => transform.rules.filter((r) => r.from.includes(schemaRef));
+  const rulesTo = (target: string) => transform.rules.filter((r) => r.to === target);
 
   // Highlighting is how the binding is shown. Drawing connector lines between
   // variable-height cards needs measurement and breaks on reflow; lighting up
@@ -31,7 +31,7 @@ export default function Mapping({
     const [hk, hv] = hot.split("|");
     if (hk === kind && hv === key) return true;
     if (hk === "rule") {
-      const r = xform.rules.find((x) => x.name === hv);
+      const r = transform.rules.find((x) => x.name === hv);
       if (!r) return false;
       return (kind === "schema" && r.from.includes(key)) || (kind === "output" && r.to === key);
     }
@@ -71,8 +71,8 @@ export default function Mapping({
         })}
       </Column>
 
-      <Column title="Transformation rules" count={xform.rules.length}>
-        {xform.rules.map((r) => (
+      <Column title="Transformation rules" count={transform.rules.length}>
+        {transform.rules.map((r) => (
           <Link
             key={r.name}
             to={`/p/${projectId}/x/${r.name}`}
@@ -95,8 +95,8 @@ export default function Mapping({
         ))}
       </Column>
 
-      <Column title="Targets" count={xform.targets.length}>
-        {xform.targets.map((t, i) => (
+      <Column title="Targets" count={transform.targets.length}>
+        {transform.targets.map((t, i) => (
           <Link
             key={t}
             to={`/p/${projectId}/target?t=${encodeURIComponent(t)}`}

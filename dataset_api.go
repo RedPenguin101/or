@@ -23,7 +23,7 @@ func (a *App) listDatasets(w http.ResponseWriter, r *http.Request) {
 }
 
 // uploadDataset lands a delivered file, validates it against its Source Schema,
-// and stages the rows that coerce cleanly.
+// and lands the rows that coerce cleanly.
 //
 // Rows that fail are returned, not hidden: at 20 rows the rejects are as
 // interesting as the successes, and at 100M they are the only thing anyone looks at.
@@ -101,9 +101,9 @@ func (a *App) uploadDataset(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, row)
 }
 
-// datasetRows reads back the staged, typed rows — what the transformation
-// actually sees, rather than the raw text. Seeing the difference between the two
-// is most of what makes a coercion bug obvious.
+// datasetRows reads back the typed rows — the Dataset itself, which is what the
+// rules actually see, rather than the raw text the file arrived as. Seeing the
+// difference between the two is most of what makes a coercion bug obvious.
 func (a *App) datasetRows(w http.ResponseWriter, r *http.Request) {
 	ds, err := a.DB.ListDatasets(r.Context(), r.PathValue("id"))
 	if err != nil {
@@ -132,7 +132,7 @@ func (a *App) datasetRows(w http.ResponseWriter, r *http.Request) {
 	a.runMu.Lock()
 	defer a.runMu.Unlock()
 	rows, err := a.Engine.Query(fmt.Sprintf(
-		"SELECT * FROM read_parquet('%s') ORDER BY __row LIMIT %d", target.StagePath, limit))
+		"SELECT * FROM read_parquet('%s') ORDER BY __row LIMIT %d", target.DataPath, limit))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return

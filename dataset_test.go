@@ -44,7 +44,7 @@ func TestIngestFASAccountMaster(t *testing.T) {
 		t.Errorf("landed rows = %d, want 19", ds.Rows)
 	}
 
-	if err := eng.Attach("stg_account_master", ds.StagePath); err != nil {
+	if err := eng.Attach("stg_account_master", ds.DataPath); err != nil {
 		t.Fatalf("attach: %v", err)
 	}
 

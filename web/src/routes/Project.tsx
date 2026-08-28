@@ -17,7 +17,7 @@ export default function Project() {
   const schemas = useQuery({ queryKey: ["p", id, "schemas"], queryFn: () => api.schemas(id) });
   const datasets = useQuery({ queryKey: ["p", id, "ds"], queryFn: () => api.datasets(id) });
   const runs = useQuery({ queryKey: ["p", id, "runs"], queryFn: () => api.runs(id) });
-  const xform = useQuery({ queryKey: ["p", id, "xform"], queryFn: () => api.xform(id) });
+  const transform = useQuery({ queryKey: ["p", id, "transform"], queryFn: () => api.transform(id) });
 
   const [reason, setReason] = useState("");
 
@@ -38,9 +38,9 @@ export default function Project() {
         <h1 className="text-xl font-semibold tracking-tight">{project.data?.name}</h1>
         {project.data && <Pill>{project.data.migration_type}</Pill>}
         <span className="text-xs text-ink-soft">target firm {project.data?.firm}</span>
-        {xform.data && (
+        {transform.data && (
           <span className="ml-auto flex items-center gap-2 text-xs text-ink-soft">
-            rules <Hash value={xform.data.hash} />
+            rules <Hash value={transform.data.hash} />
           </span>
         )}
       </div>
@@ -49,10 +49,10 @@ export default function Project() {
         title="How the source becomes Qniform"
         aside="click anything to open it"
       >
-        {xform.data && schemas.data && datasets.data && (
+        {transform.data && schemas.data && datasets.data && (
           <Mapping
             projectId={id}
-            xform={xform.data}
+            transform={transform.data}
             schemas={schemas.data}
             datasets={datasets.data}
           />

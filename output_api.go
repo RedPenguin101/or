@@ -54,8 +54,8 @@ func (a *App) getTarget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mt, err := a.Type(p.MigrationType)
-	if err != nil || mt.Xform == nil {
-		writeErr(w, http.StatusNotFound, fmt.Errorf("no xform for migration type %s", p.MigrationType))
+	if err != nil || mt.Transform == nil {
+		writeErr(w, http.StatusNotFound, fmt.Errorf("no transform for migration type %s", p.MigrationType))
 		return
 	}
 	target := r.URL.Query().Get("t")
@@ -65,7 +65,7 @@ func (a *App) getTarget(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var rules []Rule
-	for _, rule := range mt.Xform.Ordered() {
+	for _, rule := range mt.Transform.Ordered() {
 		if rule.To == target {
 			rules = append(rules, rule)
 		}
@@ -108,7 +108,7 @@ func (a *App) getTarget(w http.ResponseWriter, r *http.Request) {
 	bound := map[string][]string{}
 	detail := map[string]Bind{}
 	for _, rule := range rules {
-		for name, b := range rule.Payload.Fields {
+		for name, b := range rule.Binding.Fields {
 			bound[name] = append(bound[name], rule.Name)
 			if _, seen := detail[name]; !seen {
 				detail[name] = b

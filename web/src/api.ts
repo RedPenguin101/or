@@ -91,7 +91,7 @@ export type Run = {
   inputs: {
     schemas: Record<string, string>;
     specs: Record<string, string>;
-    xform: string;
+    transform: string;
     datasets: Record<string, string>;
     digest: string;
   };
@@ -116,8 +116,9 @@ export type Run = {
 //       owns its whole chain; `tier` dropped
 //   v5  target specs recorded among the inputs, and `inputs.triple` renamed
 //       `inputs.digest` — there are four inputs now, not three
+//   v6  `inputs.xform` renamed `inputs.transform`
 type RawRun = Omit<Run, "outputs" | "withheld_at_ingest" | "source" | "inputs"> & {
-  inputs: Run["inputs"] & { triple?: string };
+  inputs: Run["inputs"] & { triple?: string; xform?: string };
   source?: { delivered: number; rows?: number; staged?: number };
   outputs?: Output[];
   withheld_at_ingest?: Reject[];
@@ -140,6 +141,7 @@ export function normalizeRun(raw: RawRun): Run {
     ...raw.inputs,
     specs: raw.inputs.specs ?? {},
     digest: raw.inputs.digest ?? raw.inputs.triple ?? "",
+    transform: raw.inputs.transform ?? raw.inputs.xform ?? "",
   };
 
   const source = raw.source
@@ -208,7 +210,7 @@ export type Bind = {
   object?: Record<string, unknown>;
 };
 
-export type PayloadSpec = {
+export type TargetBinding = {
   row_key: string;
   fields: Record<string, Bind>;
   order: string[] | null;
@@ -222,12 +224,12 @@ export type Rule = {
   summary: string;
   from: string[];
   to: string;
-  model: string;
+  sql: string;
   mints: Mint;
-  payload: PayloadSpec;
+  binding: TargetBinding;
 };
 
-export type Xform = {
+export type Transform = {
   name: string;
   version: number;
   description: string;
@@ -235,8 +237,8 @@ export type Xform = {
   inputs: { schema: string; as: string }[];
   targets: string[];
   rules: Rule[];
-  models: Record<string, string>;
-  model_deps: Record<string, string[]>;
+  sql: Record<string, string>;
+  sql_reads: Record<string, string[]>;
 };
 
 export type FieldCoverage = {
@@ -289,7 +291,7 @@ export const api = {
       body: JSON.stringify(body),
     }),
   schemas: (id: string) => req<Schema[]>(`/api/projects/${id}/schemas`),
-  xform: (id: string) => req<Xform>(`/api/projects/${id}/xform`),
+  transform: (id: string) => req<Transform>(`/api/projects/${id}/transform`),
   target: (id: string, target: string) =>
     req<TargetDetail>(`/api/projects/${id}/target?t=${encodeURIComponent(target)}`),
   datasets: (id: string) => req<Dataset[]>(`/api/projects/${id}/datasets`),

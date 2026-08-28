@@ -30,10 +30,10 @@ type App struct {
 // A MigrationType is one of the big legacy systems. Choosing it at project
 // creation is what supplies the out-of-the-box schemas and transformation rules.
 type MigrationType struct {
-	Name    string                   `json:"name"`
-	Title   string                   `json:"title"`
-	Schemas map[string]*SourceSchema `json:"schemas"`
-	Xform   *Xform                   `json:"-"`
+	Name      string                   `json:"name"`
+	Title     string                   `json:"title"`
+	Schemas   map[string]*SourceSchema `json:"schemas"`
+	Transform *Transform               `json:"-"`
 }
 
 var migrationTypeTitles = map[string]string{
@@ -69,13 +69,13 @@ func LoadMigrationTypes(root string) (map[string]*MigrationType, error) {
 			}
 			mt.Schemas[s.Ref()] = s
 		}
-		xdirs, _ := filepath.Glob(filepath.Join(root, e.Name(), "xforms", "*"))
-		for _, d := range xdirs {
-			x, err := LoadXform(d)
+		tdirs, _ := filepath.Glob(filepath.Join(root, e.Name(), "transforms", "*"))
+		for _, d := range tdirs {
+			x, err := LoadTransform(d)
 			if err != nil {
 				return nil, err
 			}
-			mt.Xform = x // iteration 1 ships exactly one xform per Migration Type
+			mt.Transform = x // iteration 1 ships exactly one transform per Migration Type
 		}
 		out[e.Name()] = mt
 	}
