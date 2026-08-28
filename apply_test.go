@@ -26,13 +26,13 @@ func runFAS(t *testing.T) *Run {
 	if err != nil {
 		t.Fatalf("ingest: %v", err)
 	}
-	run, err := Apply(eng, ApplyInput{
-		Project: "fas-demo", Reason: "walking skeleton",
+	run, err := ExecuteRun(eng, RunRequest{
+		Number: 1, Project: "fas-demo", Reason: "walking skeleton",
 		Actor: Actor{Kind: "test", ID: "go"}, Firm: "PERSUS",
 		Schemas:  map[string]*SourceSchema{"account_master": schema},
 		Datasets: map[string]*Dataset{"account_master": ds},
 		Xform:    x, Prior: prior, Spec: mustSpec(t),
-	}, 1)
+	})
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
@@ -51,7 +51,7 @@ func mustSpec(t *testing.T) *Spec {
 }
 
 // output finds one rule's emission in the Run.
-func output(r *Run, rule string) *OutputResult {
+func output(r *Run, rule string) *RuleOutput {
 	for i := range r.Outputs {
 		if r.Outputs[i].Rule == rule {
 			return &r.Outputs[i]
@@ -203,8 +203,8 @@ func TestDerivedRolesVaryByAccountType(t *testing.T) {
 func TestRunIsDeterministic(t *testing.T) {
 	t.Parallel()
 	a, b := runFAS(t), runFAS(t)
-	if a.Inputs.Triple != b.Inputs.Triple {
-		t.Errorf("input triple differs between runs: %s vs %s", a.Inputs.Triple, b.Inputs.Triple)
+	if a.Inputs.Digest != b.Inputs.Digest {
+		t.Errorf("input digest differs between runs: %s vs %s", a.Inputs.Digest, b.Inputs.Digest)
 	}
 	// The payloads must be byte-identical, including order. Anything else means
 	// something in the pipeline depends on scan order, which would break both
@@ -273,17 +273,76 @@ func TestRuleColumnsMustBeTargetFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = Apply(eng, ApplyInput{
-		Project: "fas-demo", Reason: "guard", Actor: Actor{Kind: "test", ID: "go"},
+	_, err = ExecuteRun(eng, RunRequest{
+		Number: 1, Project: "fas-demo", Reason: "guard", Actor: Actor{Kind: "test", ID: "go"},
 		Firm:     "PERSUS",
 		Schemas:  map[string]*SourceSchema{"account_master": schema},
 		Datasets: map[string]*Dataset{"account_master": ds},
 		Xform:    x, Prior: prior, Spec: mustSpec(t),
-	}, 1)
+	})
 	if err == nil {
 		t.Fatal("a column that means nothing to the target must fail the run")
 	}
 	if !strings.Contains(err.Error(), "status") {
 		t.Errorf("error should name the offending column, got: %v", err)
+	}
+}
+
+// The target's contract is an input, not a dependency: validating against it
+// withholds payloads, so a changed contract changes the output. If it were left
+// out of the recorded inputs, two runs could share a digest and disagree.
+func TestTargetSpecIsPartOfTheContract(t *testing.T) {
+	t.Parallel()
+	base := runFAS(t)
+	if len(base.Inputs.Specs) != 2 {
+		t.Fatalf("recorded specs = %v, want one per target written", base.Inputs.Specs)
+	}
+	for _, target := range []string{"PUT /parties", "PUT /firms/{firm}/accounts"} {
+		if base.Inputs.Specs[target] == "" {
+			t.Errorf("no contract recorded for %s", target)
+		}
+	}
+
+	// Narrow what Qniform accepts, exactly as a Qniform release could.
+	spec := mustSpec(t)
+	item, err := spec.Operation("PUT /parties")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.Type == "array" {
+		item = item.Items
+	}
+	item.Required = append(item.Required, "pre_name")
+
+	schema, _ := LoadSourceSchema("migration_types/FAS/schemas/account-master.yaml")
+	x, _ := LoadXform("migration_types/FAS/xforms/fas-accounts")
+	raw, _ := os.ReadFile("testdata/fas_account_master.csv")
+	eng := testEngine(t)
+	ds, prior, err := Ingest(eng, t.TempDir(), schema, "account_master", raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed, err := ExecuteRun(eng, RunRequest{
+		Number: 1, Project: "fas-demo", Reason: "narrowed contract",
+		Actor: Actor{Kind: "test", ID: "go"}, Firm: "PERSUS",
+		Schemas:  map[string]*SourceSchema{"account_master": schema},
+		Datasets: map[string]*Dataset{"account_master": ds},
+		Xform:    x, Prior: prior, Spec: spec,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if changed.Inputs.Specs["PUT /parties"] == base.Inputs.Specs["PUT /parties"] {
+		t.Error("a narrowed contract must change that target's recorded version")
+	}
+	if changed.Inputs.Digest == base.Inputs.Digest {
+		t.Error("a narrowed contract must change the Run's digest — otherwise two runs " +
+			"can share an identity and disagree about what they produced")
+	}
+	// The other target is untouched, which is why specs are hashed per target
+	// rather than over the whole document.
+	if changed.Inputs.Specs["PUT /firms/{firm}/accounts"] != base.Inputs.Specs["PUT /firms/{firm}/accounts"] {
+		t.Error("an unrelated endpoint's contract should not have changed")
 	}
 }

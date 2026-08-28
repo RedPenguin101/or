@@ -218,3 +218,25 @@ func qniformSpecPath() string {
 	}
 	return "../qniform6/openapi.yaml"
 }
+
+// HashFor is the version of one target's contract: the shape Qniform will accept
+// at this endpoint.
+//
+// Hashed per target rather than over the whole document on purpose. The spec is
+// an *input* to a Run — validation withholds payloads, so a changed contract
+// changes the output — but only the endpoints a transform actually writes are
+// inputs to it. A typo in an unrelated endpoint's prose should not invalidate a
+// run that never touched it.
+func (s *Spec) HashFor(target string) (string, error) {
+	doc, err := s.Describe(target)
+	if err != nil {
+		return "", err
+	}
+	// Deliberately excludes Summary and Description: prose is documentation, not
+	// contract, and a reworded paragraph does not change what Qniform accepts.
+	return hashJSON(struct {
+		Target   string
+		MaxItems int
+		Item     *jsonSchema
+	}{doc.Target, doc.MaxItems, doc.Item}), nil
+}

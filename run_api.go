@@ -65,7 +65,7 @@ func (a *App) createRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Bind each declared input to the most recent dataset for its schema.
-	in := ApplyInput{
+	in := RunRequest{
 		Project: p.Name, Reason: req.Reason,
 		Actor:    Actor{Kind: "user", ID: req.Actor},
 		Firm:     p.Firm,
@@ -95,14 +95,14 @@ func (a *App) createRun(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	number, err := a.DB.NextRunNumber(r.Context(), projectID)
+	in.Number, err = a.DB.NextRunNumber(r.Context(), projectID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
 	}
 
 	a.runMu.Lock()
-	run, err := Apply(a.Engine, in, number)
+	run, err := ExecuteRun(a.Engine, in)
 	a.runMu.Unlock()
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err)

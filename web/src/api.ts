@@ -86,11 +86,14 @@ export type Run = {
   started_at: string;
   finished_at: string;
   source?: { delivered: number; rows: number };
+  // Four things a Run is a function of: what the source looks like, what the
+  // target looks like, how to map between them, and the data itself.
   inputs: {
     schemas: Record<string, string>;
-    datasets: Record<string, string>;
+    specs: Record<string, string>;
     xform: string;
-    triple: string;
+    datasets: Record<string, string>;
+    digest: string;
   };
   nodes: Record<string, { hash: string; cached: boolean; rows_out: number; ms: number }>;
   outputs: Output[];
@@ -111,7 +114,10 @@ export type Run = {
 //       Dataset, so there is no separate staged thing to name
 //   v4  emissions are per-rule (`rule` rather than `name`), since a rule now
 //       owns its whole chain; `tier` dropped
-type RawRun = Omit<Run, "outputs" | "withheld_at_ingest" | "source"> & {
+//   v5  target specs recorded among the inputs, and `inputs.triple` renamed
+//       `inputs.digest` — there are four inputs now, not three
+type RawRun = Omit<Run, "outputs" | "withheld_at_ingest" | "source" | "inputs"> & {
+  inputs: Run["inputs"] & { triple?: string };
   source?: { delivered: number; rows?: number; staged?: number };
   outputs?: Output[];
   withheld_at_ingest?: Reject[];
@@ -129,6 +135,13 @@ export function normalizeRun(raw: RawRun): Run {
       : undefined,
   });
 
+  // Before v5 the digest covered three inputs and was called the triple.
+  const inputs = {
+    ...raw.inputs,
+    specs: raw.inputs.specs ?? {},
+    digest: raw.inputs.digest ?? raw.inputs.triple ?? "",
+  };
+
   const source = raw.source
     ? { delivered: raw.source.delivered, rows: raw.source.rows ?? raw.source.staged ?? 0 }
     : undefined;
@@ -136,6 +149,7 @@ export function normalizeRun(raw: RawRun): Run {
   if (version >= 2) {
     return {
       ...raw,
+      inputs,
       source,
       outputs: raw.outputs ?? [],
       withheld_at_ingest: raw.withheld_at_ingest ?? [],
@@ -148,6 +162,7 @@ export function normalizeRun(raw: RawRun): Run {
   const ingest = all.find((s) => s.name === "ingest");
   return {
     ...raw,
+    inputs,
     source,
     outputs: all
       .filter((s) => s.name !== "ingest")
@@ -164,7 +179,7 @@ export function normalizeRun(raw: RawRun): Run {
 export type RunSummary = {
   id: string;
   number: number;
-  triple: string;
+  digest: string;
   status: string;
   reason: string;
   actor: string;

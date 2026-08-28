@@ -288,8 +288,25 @@ intermediate layer is exactly where derivation, dedupe and minting live. The thr
 
 ## 4. Determinism as the performance mechanism
 
-`Output = Apply(SourceSchemas, SourceDatasets, Xforms)` is presented in the project description as
-an audit property. It is also the *speed* mechanism, and the design should lean on that reading.
+`Output = Run(SourceSchemas, TargetSpecs, Xforms, SourceDatasets)` is presented in the project
+description as an audit property. It is also the *speed* mechanism, and the design should lean on
+that reading.
+
+### The target's contract is the fourth input `[DECIDED]`
+
+`project_description.md` names three inputs. There are four, and the missing one was found while
+renaming: **validating against Qniform's OpenAPI spec does not merely report — it withholds
+payloads.** A narrowed contract therefore changes what a Run produces, which makes it an input
+whether or not anybody wrote it down. Without recording it, two Runs could share an identity and
+legitimately disagree about their output — the exact failure the property exists to prevent.
+
+Specs are hashed **per target**, not over the whole document: only the endpoints a transform
+actually writes are inputs to it, so a reworded paragraph on an unrelated endpoint must not
+invalidate a Run that never touched it. Summary and description are excluded from the hash for the
+same reason — prose is documentation, contract is shape.
+
+The four read cleanly as a sentence: what the source looks like, what the target looks like, how to
+map between them, and the data going through the pipe.
 
 **Content-address everything:** `[LEANING]`
 

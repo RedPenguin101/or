@@ -49,9 +49,10 @@ CREATE TABLE IF NOT EXISTS runs (
     id           TEXT PRIMARY KEY,
     project_id   TEXT        NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     number       INTEGER     NOT NULL,
-    -- The Run's identity: hash of (schemas, datasets, xform). Two runs with the
-    -- same triple are guaranteed to have produced the same output.
-    triple       TEXT        NOT NULL,
+    -- The Run's identity: the digest of what the source looks like, what the
+    -- target looks like, how to map between them, and the data itself. Two runs
+    -- with the same digest are guaranteed to have produced the same output.
+    digest       TEXT        NOT NULL,
     status       TEXT        NOT NULL,
     -- Required, not optional. The audit obligation is about *why*.
     reason       TEXT        NOT NULL CHECK (length(trim(reason)) > 0),
@@ -77,5 +78,12 @@ BEGIN
         WHERE table_name = 'runs' AND column_name = 'body' AND data_type = 'jsonb'
     ) THEN
         ALTER TABLE runs ALTER COLUMN body TYPE JSON USING body::text::json;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'runs' AND column_name = 'triple'
+    ) THEN
+        ALTER TABLE runs RENAME COLUMN triple TO digest;
     END IF;
 END $$;

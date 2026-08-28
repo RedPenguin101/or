@@ -112,7 +112,7 @@ export default function Project() {
                 <span className="ml-auto flex items-center gap-3 text-xs text-ink-soft">
                   <span className="text-good">{r.accepted} accepted</span>
                   {r.rejected > 0 && <span className="text-warn">{r.rejected} withheld</span>}
-                  <Hash value={r.triple} />
+                  <Hash value={r.digest} />
                 </span>
               </Link>
             </li>

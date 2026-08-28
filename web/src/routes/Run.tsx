@@ -30,7 +30,7 @@ export default function RunView() {
 
       <Panel
         title="Inputs"
-        aside="Output = Apply(SourceSchemas, SourceDatasets, Xforms)"
+        aside="Output = Run(Schemas, Specs, Xform, Datasets)"
       >
         <div className="flex flex-wrap items-start gap-8 text-xs">
           <div>
@@ -50,14 +50,25 @@ export default function RunView() {
             ))}
           </div>
           <div>
+            <div className="mb-1 text-ink-soft">Target contracts</div>
+            {Object.entries(r.inputs.specs).map(([k, v]) => (
+              <div key={k} className="mono flex items-center gap-2">
+                {k} <Hash value={v} />
+              </div>
+            ))}
+            {Object.keys(r.inputs.specs).length === 0 && (
+              <div className="text-ink-soft/70">not recorded by this run</div>
+            )}
+          </div>
+          <div>
             <div className="mb-1 text-ink-soft">Xform</div>
             <Hash value={r.inputs.xform} />
           </div>
           <div>
             <div className="mb-1 text-ink-soft">Run identity</div>
-            <Hash value={r.inputs.triple} />
+            <Hash value={r.inputs.digest} />
             <div className="mt-1 max-w-xs text-ink-soft/80">
-              Any run with this triple produced exactly this output.
+              Any run with this digest produced exactly this output.
             </div>
           </div>
         </div>

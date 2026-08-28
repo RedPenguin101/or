@@ -291,8 +291,8 @@ func (x *Xform) Ordered() []Rule {
 }
 
 // Hash is the Xform's version: the manifest and every model's SQL together.
-// Changing one rule changes the transform, which is what makes a Run's input
-// triple honest.
+// Changing one rule changes the transform, which is what keeps a Run's recorded
+// input versions honest.
 func (x *Xform) Hash() string {
 	type flat struct {
 		Manifest any

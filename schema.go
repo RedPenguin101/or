@@ -12,7 +12,7 @@ import (
 // A SourceSchema is a named "table" from a Source System: the per-field names,
 // types, descriptions and required flags a Dataset is validated against.
 //
-// It is content-addressed. Its hash is one third of the input triple that makes
+// It is content-addressed. Its hash is one of the four input versions that make
 // a Run a pure function (devnotes/design.md §4), so the canonical form below is
 // load-bearing, not a convenience.
 type SourceSchema struct {

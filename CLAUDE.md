@@ -56,11 +56,17 @@ For read-only checks, using the user's running server is fine — prefer that to
 The system is one pure function, and everything else serves it:
 
 ```
-Output = Apply(SourceSchemas, SourceDatasets, Xforms)
+Output = Run(SourceSchemas, TargetSpecs, Xforms, SourceDatasets)
 ```
 
-All three inputs are content-addressed, so a Run's identity is the hash of the triple and any Run
-is exactly reproducible. `apply.go` is that function; read it first.
+Four inputs — what the source looks like, what the target looks like, how to map between them, and
+the data itself — all content-addressed, so a Run's identity is their **digest** and any Run is
+exactly reproducible. `run.go` holds it; read that first.
+
+**The target spec is an input, not a dependency**: spec validation *withholds* payloads, so a
+changed Qniform contract changes the output. It is hashed per target (`Spec.HashFor`), because only
+the endpoints a transform writes are inputs to it. Do not move it out of `InputVersions` —
+`TestTargetSpecIsPartOfTheContract` pins this.
 
 **Storage is split three ways** and this is deliberate (`design.md` §5): Postgres holds metadata
 only (`db.go`, `migrations/001_initial_schema.sql`); dataset content lands as Parquet under
@@ -104,7 +110,8 @@ only (`db.go`, `migrations/001_initial_schema.sql`); dataset content lands as Pa
    which the emitter omits by a fixed rule). Do not reintroduce either: they are what let a second
    transformation layer grow. What is left is the field list, `map`/`key_from` nesting,
    `references`, and batch config. See `devnotes/design.md` §3b.
-5. `apply.go` — collapses entities on their declared identity, runs the quarantine cascade, emits.
+5. `run.go` — one story in order: what a Run *is*, what it takes to ask for one (`RunRequest`), and
+   `ExecuteRun` — which collapses on the declared identity, runs the quarantine cascade, and emits.
    Identity is declared per **entity**; minting is per **Rule**, so two rules can feed one entity
    with different keys under one shared conflict policy.
 6. `openapi.go` — validates every emitted batch against Qniform's real spec before reporting, and
@@ -127,7 +134,7 @@ only (`db.go`, `migrations/001_initial_schema.sql`); dataset content lands as Pa
 
 **Run records are immutable and never migrated.** They are audit artifacts, read years after the
 writing code has moved on, so older shapes stay on disk forever and the obligation is on the
-reader. New Runs carry `record_version` (absent means 0; currently 4); bump `CurrentRecordVersion` in
+reader. New Runs carry `record_version` (absent means 0; currently 5); bump `CurrentRecordVersion` in
 `run.go` whenever the record gains or renames a field, and adapt every past shape in
 `normalizeRun` (`web/src/api.ts`) — one place, not conditionals scattered through components. A reader that meets an absent field **omits it rather than
 reconstructing it** — see `web/src/components/Flow.tsx`, which draws no source counts for a v0 run
