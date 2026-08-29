@@ -758,3 +758,35 @@ The general shape: a declaration that can only ever restate something already de
 configuration, it is an opportunity for two sources of truth to disagree. Worth applying the same
 test to what remains — `row_key` is a candidate, since it is `code` on every rule and is really a
 property of the target's upsert key rather than a choice.
+
+### 5.14 Record versioning was premature, and is gone
+
+§5.8 argued that Run records are audit artifacts, never migrated, so every reader must tolerate
+every past shape — and added `record_version` plus a normalizer to do it.
+
+The reasoning holds for a system with real migrations in it. It did not hold for this one. In two
+days the version went to **6**, the normalizer grew four fallbacks and a branch, and every record it
+protected was throwaway data from the session that wrote it. Six versions of ceremony guarding
+nothing.
+
+Reading how it was actually used made the imbalance clear: of the six steps, exactly **one** was
+handled by branching on the version. The rest were handled by probing — `digest ?? triple`,
+`transform ?? xform`, `rows ?? staged` — which is precisely what the field's own comment said it
+existed to avoid.
+
+That split was not an accident, and it is the part worth keeping:
+
+- **Probing suffices for a rename.** `digest` absent unambiguously means "look for `triple`";
+  nothing else could cause the absence.
+- **A version number is needed for a removal or a change of meaning.** v1→v2 moved the ingest
+  rejects out of `stages`, where they had ridden as a pseudo-entry. No field's presence distinguishes
+  those shapes, so probing cannot detect it.
+
+So the discipline is right, and the trigger for adopting it is **the first record anyone will
+actually read back** — not the first change to the struct. Until then, keeping the field while not
+really branching on it was the worst of the three options: it looked like a guarantee that was not
+being enforced.
+
+Deleting it invalidated every run then in the dev database. That was the correct trade at this
+stage, and is worth noticing as the signal for when it stops being: once clearing the runs table is
+not an acceptable answer, the versioning comes back.

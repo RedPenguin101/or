@@ -132,14 +132,6 @@ only (`db.go`, `migrations/001_initial_schema.sql`); dataset content lands as Pa
   error stays causally accurate ("withheld because its rep conflicts") rather than arriving from
   Qniform as twenty unresolvable-code errors.
 
-**Run records are immutable and never migrated.** They are audit artifacts, read years after the
-writing code has moved on, so older shapes stay on disk forever and the obligation is on the
-reader. New Runs carry `record_version` (absent means 0; currently 6); bump `CurrentRecordVersion` in
-`run.go` whenever the record gains or renames a field, and adapt every past shape in
-`normalizeRun` (`web/src/api.ts`) — one place, not conditionals scattered through components. A reader that meets an absent field **omits it rather than
-reconstructing it** — see `web/src/components/Flow.tsx`, which draws no source counts for a v0 run
-instead of inferring them from the stages.
-
 Rejects carry three orthogonal axes (`reject.go`): `class` (row vs set-level `conflict`), `stage`
 (`coercion` / `validation` / `target` — the extract's fault, ours, or Qniform's), and `cause`
 (linking a withheld row to the upstream reject that caused it).
@@ -245,3 +237,4 @@ These were renamed deliberately; do not reintroduce the old words.
 | stage (on a Reject) | **phase** | collided with the emissions, which were also "stages" |
 | Prior | **WithheldAtIngest** | says what it holds |
 | triple | **digest** | there are four inputs, not three |
+| record_version | *nothing* | premature: no run predates this week, and versioning six shapes protected only throwaway data |

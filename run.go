@@ -14,16 +14,6 @@ import (
 // four inputs are content-addressed, their digest is the Run's identity and
 // re-executing it is guaranteed to reproduce this output (design.md §4).
 type Run struct {
-	// RecordVersion identifies the shape of this record, so a reader years from
-	// now can branch on it explicitly rather than probing for fields.
-	//
-	// A Run is an audit artifact: it is written once and read by code that has
-	// long since moved on. Older records are never migrated — rewriting history
-	// is precisely what the audit trail exists to prevent — so every reader must
-	// tolerate the shapes that came before. Absent means 0, the shape written
-	// before source counts were recorded.
-	RecordVersion int `json:"record_version"`
-
 	Number     int       `json:"run"`
 	Project    string    `json:"project"`
 	StartedAt  time.Time `json:"started_at"`
@@ -73,10 +63,6 @@ type InputVersions struct {
 	// the same digest are guaranteed to have produced the same output.
 	Digest string `json:"digest"`
 }
-
-// CurrentRecordVersion is stamped on new Runs. Bump it whenever the record gains
-// or changes a field, and note the difference where readers branch.
-const CurrentRecordVersion = 6
 
 // Source is how much data the Run actually read. It is recorded rather than
 // inferred from an Output's counts: derivation means no Output's row count
@@ -176,14 +162,13 @@ func ExecuteRun(eng *Engine, in RunRequest) (*Run, error) {
 	started := time.Now()
 
 	run := &Run{
-		RecordVersion: CurrentRecordVersion,
-		Number:        in.Number,
-		Project:       in.Project,
-		StartedAt:     started,
-		Actor:         in.Actor,
-		Reason:        in.Reason,
-		Nodes:         map[string]NodeStat{},
-		Target:        RunTarget{Kind: "preview", Firm: in.Firm},
+		Number:    in.Number,
+		Project:   in.Project,
+		StartedAt: started,
+		Actor:     in.Actor,
+		Reason:    in.Reason,
+		Nodes:     map[string]NodeStat{},
+		Target:    RunTarget{Kind: "preview", Firm: in.Firm},
 		Inputs: InputVersions{
 			Schemas:   map[string]string{},
 			Specs:     map[string]string{},

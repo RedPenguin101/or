@@ -56,9 +56,6 @@ export default function RunView() {
                 {k} <Hash value={v} />
               </div>
             ))}
-            {Object.keys(r.inputs.specs).length === 0 && (
-              <div className="text-ink-soft/70">not recorded by this run</div>
-            )}
           </div>
           <div>
             <div className="mb-1 text-ink-soft">Xform</div>

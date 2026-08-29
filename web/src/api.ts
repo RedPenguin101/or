@@ -74,10 +74,6 @@ export type Output = {
 };
 
 export type Run = {
-  // Absent on records written before source counts were recorded. Readers must
-  // tolerate every shape ever written: run records are audit artifacts and are
-  // never migrated in place.
-  record_version?: number;
   run: number;
   project: string;
   tier: string;
@@ -85,7 +81,7 @@ export type Run = {
   actor: { kind: string; id: string };
   started_at: string;
   finished_at: string;
-  source?: { delivered: number; rows: number };
+  source: { delivered: number; rows: number };
   // Four things a Run is a function of: what the source looks like, what the
   // target looks like, how to map between them, and the data itself.
   inputs: {
@@ -100,83 +96,6 @@ export type Run = {
   withheld_at_ingest: Reject[];
   totals: { emitted: number; accepted: number; rejected: number };
 };
-
-// Run records on disk are never migrated — they are audit artifacts, and
-// rewriting them would destroy the property they exist to provide. So every
-// historical shape is adapted here, in one place, rather than by conditionals
-// scattered through the components.
-//
-//   v0  no `source`; emissions under `stages`, with ingest among them
-//   v1  `source` added
-//   v2  emissions renamed `outputs`; ingest rejects promoted to
-//       `withheld_at_ingest`; a reject's `stage` renamed `phase`
-//   v3  `source.staged` renamed `source.rows` — the coerced table IS the
-//       Dataset, so there is no separate staged thing to name
-//   v4  emissions are per-rule (`rule` rather than `name`), since a rule now
-//       owns its whole chain; `tier` dropped
-//   v5  target specs recorded among the inputs, and `inputs.triple` renamed
-//       `inputs.digest` — there are four inputs now, not three
-//   v6  `inputs.xform` renamed `inputs.transform`
-type RawRun = Omit<Run, "outputs" | "withheld_at_ingest" | "source" | "inputs"> & {
-  inputs: Run["inputs"] & { triple?: string; xform?: string };
-  source?: { delivered: number; rows?: number; staged?: number };
-  outputs?: Output[];
-  withheld_at_ingest?: Reject[];
-  stages?: (Output & { name?: string; rejects: (Reject & { stage?: Reject["phase"] })[] | null })[];
-};
-
-export function normalizeRun(raw: RawRun): Run {
-  const version = raw.record_version ?? 0;
-
-  const fixReject = (r: Reject & { stage?: Reject["phase"] }): Reject => ({
-    ...r,
-    phase: r.phase ?? r.stage ?? "validation",
-    cause: r.cause
-      ? { output: r.cause.output ?? (r.cause as { stage?: string }).stage ?? "", identity: r.cause.identity }
-      : undefined,
-  });
-
-  // Before v5 the digest covered three inputs and was called the triple.
-  const inputs = {
-    ...raw.inputs,
-    specs: raw.inputs.specs ?? {},
-    digest: raw.inputs.digest ?? raw.inputs.triple ?? "",
-    transform: raw.inputs.transform ?? raw.inputs.xform ?? "",
-  };
-
-  const source = raw.source
-    ? { delivered: raw.source.delivered, rows: raw.source.rows ?? raw.source.staged ?? 0 }
-    : undefined;
-
-  if (version >= 2) {
-    return {
-      ...raw,
-      inputs,
-      source,
-      outputs: raw.outputs ?? [],
-      withheld_at_ingest: raw.withheld_at_ingest ?? [],
-    };
-  }
-
-  // Before v2 the coercion rejects rode along as a pseudo-emission called
-  // "ingest". Lift them out so every consumer sees one shape.
-  const all = raw.stages ?? [];
-  const ingest = all.find((s) => s.name === "ingest");
-  return {
-    ...raw,
-    inputs,
-    source,
-    outputs: all
-      .filter((s) => s.name !== "ingest")
-      .map((s) => ({
-        ...s,
-        // Before v4 an emission was named for its endpoint, not its rule.
-        rule: s.rule ?? s.name ?? "",
-        rejects: (s.rejects ?? []).map(fixReject),
-      })),
-    withheld_at_ingest: (ingest?.rejects ?? []).map(fixReject),
-  };
-}
 
 export type RunSummary = {
   id: string;
@@ -303,11 +222,11 @@ export const api = {
   uploadDataset: (id: string, form: FormData) =>
     req<Dataset>(`/api/projects/${id}/datasets`, { method: "POST", body: form }),
   runs: (id: string) => req<RunSummary[]>(`/api/projects/${id}/runs`),
-  run: (rid: string) => req<RawRun>(`/api/runs/${rid}`).then(normalizeRun),
+  run: (rid: string) => req<Run>(`/api/runs/${rid}`),
   createRun: (id: string, body: unknown) =>
-    req<{ id: string; run: RawRun }>(`/api/projects/${id}/runs`, {
+    req<{ id: string; run: Run }>(`/api/projects/${id}/runs`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-    }).then((r) => ({ id: r.id, run: normalizeRun(r.run) })),
+    }),
 };

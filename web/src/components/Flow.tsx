@@ -5,42 +5,28 @@ import type { Run } from "../api";
 // exists to deliver, so it gets shown before any payload detail.
 export default function Flow({ run }: { run: Run }) {
   const withheldAtIngest = run.withheld_at_ingest.length;
-  const outputs = run.outputs;
-
-  // Run records are never migrated, so older ones lack fields added since. The
-  // source counts cannot be reconstructed from the stages — derivation means no
-  // stage's row count stands for the source's, which is the whole reason they
-  // are recorded rather than inferred. So they are omitted, not guessed.
-  const source = run.source;
+  const { outputs, source } = run;
 
   return (
     <div className="overflow-x-auto">
       <div className="flex min-w-max items-stretch gap-2">
-        {source ? (
-          <>
-            <Node
-              label="File"
-              value={source.delivered}
-              unit="rows delivered"
-              sub="CSV, as it arrived"
-              tone={withheldAtIngest ? "warn" : "good"}
-            />
-            <Arrow />
-            <Node
-              label="Dataset"
-              value={source.rows}
-              unit="rows"
-              sub={
-                withheldAtIngest
-                  ? `${withheldAtIngest} could not be read`
-                  : "every row read cleanly"
-              }
-              tone={withheldAtIngest ? "warn" : "good"}
-              withheld={withheldAtIngest}
-            />
-            <Arrow />
-          </>
-        ) : null}
+        <Node
+          label="File"
+          value={source.delivered}
+          unit="rows delivered"
+          sub="CSV, as it arrived"
+          tone={withheldAtIngest ? "warn" : "good"}
+        />
+        <Arrow />
+        <Node
+          label="Dataset"
+          value={source.rows}
+          unit="rows"
+          sub={withheldAtIngest ? `${withheldAtIngest} could not be read` : "every row read cleanly"}
+          tone={withheldAtIngest ? "warn" : "good"}
+          withheld={withheldAtIngest}
+        />
+        <Arrow />
 
         {outputs.map((s, i) => (
           <div key={s.rule} className="flex items-stretch gap-2">
@@ -64,13 +50,6 @@ export default function Flow({ run }: { run: Run }) {
         with it.
       </p>
 
-      {!source && (
-        <p className="mt-2 max-w-3xl text-xs text-ink-soft/80">
-          This run predates source counts being recorded, so the rows delivered and staged are not
-          shown. They are not inferred from the outputs: derivation means no output&apos;s row
-          count stands for the source&apos;s.
-        </p>
-      )}
     </div>
   );
 }
