@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"sort"
@@ -25,6 +26,12 @@ import (
 type Spec struct {
 	Paths map[string]map[string]operation `yaml:"paths"`
 	path  string
+
+	// raw is the document exactly as authored. Kept because it, not the parsed
+	// struct, is what gets stored and hashed: OnRamp parses a fraction of
+	// OpenAPI, and a body reduced to the fraction we understand would lose the
+	// rest on the first round trip.
+	raw []byte
 }
 
 type operation struct {
@@ -51,17 +58,44 @@ type jsonSchema struct {
 	Ref         string                 `yaml:"$ref"        json:"$ref,omitempty"`
 }
 
+// LoadSpec reads the seed document from disk — the copy under targets/, which
+// a human adopts changes into. Runs read the project's stored spec instead.
 func LoadSpec(path string) (*Spec, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	var s Spec
-	if err := yaml.Unmarshal(b, &s); err != nil {
+	s, err := ParseSpec(b)
+	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	s.path = path
+	return s, nil
+}
+
+// ParseSpec reads a spec from its document body, which is the form the store
+// keeps and a Run consumes.
+func ParseSpec(raw []byte) (*Spec, error) {
+	var s Spec
+	if err := yaml.Unmarshal(raw, &s); err != nil {
+		return nil, err
+	}
+	s.raw = raw
 	return &s, nil
+}
+
+// Body is the document as authored, byte for byte.
+func (s *Spec) Body() []byte { return s.raw }
+
+// Hash identifies the whole document, which is what the store is keyed by.
+//
+// Distinct from HashFor, and deliberately: HashFor is the version of one
+// endpoint's contract, which is what a Run records, because only the endpoints a
+// transform writes are inputs to it. This one answers a different question —
+// which document is this — and a Run needs both: the per-endpoint hashes to say
+// what it depended on, this one to find the bytes again.
+func (s *Spec) Hash() string {
+	return fmt.Sprintf("sha256:%x", sha256.Sum256(s.raw))[:19]
 }
 
 // TargetDoc is what the target system says about one endpoint: its own prose and
@@ -217,7 +251,7 @@ func containsStr(ss []string, s string) bool {
 // TargetSpecPath is OnRamp's own copy of the target's contract. Checked in, so a
 // Run's recorded spec version can always be resolved back to the document that
 // produced it.
-const TargetSpecPath = "targets/qniform/openapi.yaml"
+const TargetSpecPath = "targets/" + TargetSystem + "/openapi.yaml"
 
 // targetSpecPath allows an override for tests and for the drift check, but the
 // default is always the vendored copy: a run must never depend on a file this
@@ -227,18 +261,6 @@ func targetSpecPath() string {
 		return p
 	}
 	return TargetSpecPath
-}
-
-// upstreamSpecPath points at Qniform's own document, for the drift check only.
-// Nothing in a Run reads it.
-func upstreamSpecPath() string {
-	if p := os.Getenv("QNIFORM_SPEC"); p != "" {
-		return p
-	}
-	if home, err := os.UserHomeDir(); err == nil {
-		return home + "/Code/qniform6/openapi.yaml"
-	}
-	return "../qniform6/openapi.yaml"
 }
 
 // HashFor is the version of one target's contract: the shape Qniform will accept

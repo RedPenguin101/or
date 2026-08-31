@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { schemaKey, sameSchema, schemaPath } from "../api";
 import type { Dataset, Schema, Transform } from "../api";
 
 // Mapping is the project's headline: how source schemas become outputs.
@@ -20,7 +21,10 @@ export default function Mapping({
 }) {
   const [hot, setHot] = useState<string | null>(null);
 
-  const rulesFor = (schemaRef: string) => transform.rules.filter((r) => r.from.includes(schemaRef));
+  // The highlight keys below are DOM identifiers, not identities — schemaKey is
+  // for building those, never for comparing two schemas.
+  const rulesFor = (key: string) =>
+    transform.rules.filter((r) => r.from.some((f) => schemaKey(f) === key));
   const rulesTo = (target: string) => transform.rules.filter((r) => r.to === target);
 
   // Highlighting is how the binding is shown. Drawing connector lines between
@@ -33,7 +37,10 @@ export default function Mapping({
     if (hk === "rule") {
       const r = transform.rules.find((x) => x.name === hv);
       if (!r) return false;
-      return (kind === "schema" && r.from.includes(key)) || (kind === "output" && r.to === key);
+      return (
+        (kind === "schema" && r.from.some((f) => schemaKey(f) === key)) ||
+        (kind === "output" && r.to === key)
+      );
     }
     if (hk === "schema" && kind === "rule") return rulesFor(hv).some((r) => r.name === key);
     if (hk === "output" && kind === "rule") return rulesTo(hv).some((r) => r.name === key);
@@ -49,13 +56,13 @@ export default function Mapping({
     <div className="grid gap-4 md:grid-cols-[1fr_1.35fr_1fr]">
       <Column title="Source schemas" count={schemas.length}>
         {schemas.map((s) => {
-          const ref = `${s.source_system}/${s.schema}`;
-          const ds = datasets.filter((d) => d.schema_ref === ref);
+          const ref = schemaKey(s);
+          const ds = datasets.filter((d) => sameSchema(d, s));
           const rows = ds.reduce((n, d) => n + d.rows, 0);
           return (
             <Link
               key={ref}
-              to={`/p/${projectId}/s/${encodeURIComponent(ref)}`}
+              to={schemaPath(projectId, s)}
               className={cls(lit("schema", ref))}
               onMouseEnter={() => setHot(`schema|${ref}`)}
               onMouseLeave={() => setHot(null)}
@@ -84,8 +91,8 @@ export default function Mapping({
             <p className="mt-1 line-clamp-3 text-xs text-ink-soft">{r.summary}</p>
             <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
               {r.from.map((f) => (
-                <span key={f} className="mono rounded bg-raised px-1.5 py-0.5 text-ink-soft">
-                  {f.split("/")[1] ?? f}
+                <span key={schemaKey(f)} className="mono rounded bg-raised px-1.5 py-0.5 text-ink-soft">
+                  {f.schema}
                 </span>
               ))}
               <span className="text-ink-soft">→</span>

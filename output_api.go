@@ -48,14 +48,10 @@ type fieldCov struct {
 }
 
 func (a *App) getTarget(w http.ResponseWriter, r *http.Request) {
-	p, err := a.DB.GetProject(r.Context(), r.PathValue("id"))
+	projectID := r.PathValue("id")
+	xform, err := a.DB.GetTransform(r.Context(), projectID)
 	if err != nil {
 		writeErr(w, http.StatusNotFound, err)
-		return
-	}
-	mt, err := a.Type(p.MigrationType)
-	if err != nil || mt.Transform == nil {
-		writeErr(w, http.StatusNotFound, fmt.Errorf("no transform for migration type %s", p.MigrationType))
 		return
 	}
 	target := r.URL.Query().Get("t")
@@ -65,7 +61,7 @@ func (a *App) getTarget(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var rules []Rule
-	for _, rule := range mt.Transform.Ordered() {
+	for _, rule := range xform.Ordered() {
 		if rule.To == target {
 			rules = append(rules, rule)
 		}
@@ -78,14 +74,17 @@ func (a *App) getTarget(w http.ResponseWriter, r *http.Request) {
 	rank, _ := loadRank(target)
 	v := targetView{Target: target, LoadRank: rank, Rules: rules, Fields: []fieldCov{}, Extra: []string{}}
 
-	// Without the spec there is no coverage to report, only bindings. Say so
-	// rather than presenting a partial answer as a complete one.
-	if a.Spec == nil {
-		v.DocErr = "Qniform's OpenAPI spec is not loaded, so the target's own shape is unknown"
+	// Coverage is reported against the contract this project is pinned to, which
+	// is the one its Runs validate against. Without it there is no coverage to
+	// report, only bindings — say so rather than presenting a partial answer as
+	// a complete one.
+	spec, err := a.DB.GetSpec(r.Context(), projectID, TargetSystem)
+	if err != nil {
+		v.DocErr = err.Error()
 		writeJSON(w, http.StatusOK, v)
 		return
 	}
-	doc, err := a.Spec.Describe(target)
+	doc, err := spec.Describe(target)
 	if err != nil {
 		v.DocErr = err.Error()
 		writeJSON(w, http.StatusOK, v)

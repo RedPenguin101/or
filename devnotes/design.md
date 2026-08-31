@@ -331,6 +331,8 @@ Run since the last adoption was validated against the copy currently held.
 
 - Dataset version = hash of content.
 - Source Schema version = hash of canonical JSON.
+- Transform version = hash of its whole body, manifest and every rule's SQL together.
+- Target spec version = hash of the document; per-endpoint hashes are what a Run records.
 - **Each model node** = hash of its SQL + the hashes of its inputs.
 - A Run's identity = hash of the input triple.
 
@@ -344,13 +346,66 @@ recomputes the world.
 
 ---
 
+## 4a. Seed and version: where the four inputs live `[DECIDED]`
+
+Every input to a Run is stored twice over, in two layers doing two different jobs. Collapsing them
+is what let the transform and the target spec go unversioned for as long as they did.
+
+**Seed** — `migration_types/<TYPE>/schemas/*.yaml`, `migration_types/<TYPE>/transforms/<name>/`,
+`targets/qniform/openapi.yaml`. Human-authored, in git, hand-editable, diffable. This is the
+out-of-the-box catalogue a Migration Type ships: what a *new* project starts from. It is read at
+**project creation and nowhere else**.
+
+**The quad is always the project's own.** Nothing is shared between projects. What a project runs is
+what its own rows say, and another project revising its copy is invisible from here. Folding a
+project's changes back into the shipped catalogue, or a catalogue change forward into a running
+project, is a deliberate act — a separate concern, and there is no path by which either happens
+implicitly. `[OPEN]`
+
+`project_schemas`, `project_transforms` and `project_specs` are **write-only logs**. The first row is
+copied from the seed at project creation; every revision appends another carrying its own body, hash
+and metadata. Nothing is updated or deleted. The current version is the newest row for a
+(project, name) — never a row flagged as current, which would be a second place for one fact to be
+recorded. The rows it supersedes are the audit trail: who changed it, when, and `reason`, refused if
+blank as a Run's is. Overwriting would leave the trail reconstructible only from Runs that happened
+to be executed, and would record no rationale at all.
+
+Body and metadata sit in the same row. The alternative considered and rejected was a
+content-addressed `*_bodies` table per input with the logs referencing it by hash — which
+deduplicates identical content across projects and across reverts. It was rejected because the
+saving is a few MB and the cost is the model: a shared body row is an object two projects share, in
+a design whose first claim is that they share nothing. `datasets` already had the shape now used
+throughout, which should have been the tell.
+
+### What this buys
+
+Editing the shipped catalogue changes what new projects begin with, and **nothing** about what
+existing ones do on their next Run. Before this, editing a transform silently changed every project
+of that Migration Type, with no version boundary and no way to reconstruct what the previous Run had
+run.
+
+The corollary is that adopting an improved catalogue transform becomes an explicit act per project —
+the same shape as adopting an upstream spec change (`spec-check.sh`), and for the same reason.
+
+**A hash covers the whole body.** `Transform.Hash` used to hash a projection of the transform, which
+excluded its description; two transforms differing only in prose shared a key, so the second stored
+would silently have been the first read back. It now hashes exactly what is stored, as
+`SourceSchema.Hash` already did.
+
+`Spec.Hash` (the document) and `Spec.HashFor` (one endpoint) are both needed and are not the same
+thing: the store is keyed by the document, while a Run records the per-endpoint contracts it actually
+depended on. One finds the bytes again; the other says what the output was a function of.
+
+---
+
 ## 5. Storage and execution
 
 `[LEANING]` This is the "valid use case for a different database technology" the project
 description allows for.
 
-- **Postgres** — projects, schemas, the rule DAG, versions, Runs, audit, comments, knowledge
-  base, Milestones/Outcomes. Small, relational, transactional.
+- **Postgres** — projects, Runs, audit, comments, knowledge base, Milestones/Outcomes, and the
+  content-addressed bodies of the three small inputs: schemas, transforms, target specs (§4a).
+  Small, relational, transactional.
 - **Parquet on object storage** — Dataset content. Immutable, content-addressed, cheap.
 - **DuckDB** — the execution engine. Vectorized, reads Parquet natively, sub-second over tens of
   millions of rows on one machine, Postgres-ish dialect that LLMs write well.
@@ -598,6 +653,15 @@ third structural shape beyond entities and roles.
    ordering, backwards for the pre-emission quarantine cascade (§3a.3).
 8. Conflict-resolution vocabulary beyond `error` — when `most_common` / `first_by` become
    available, and how the *reason* for choosing one is captured. `[OPEN]`
+9. How a Run **links to its quad**. `[OPEN]`, deliberately deferred — it works, it just isn't
+   pretty. The four hashes live in `runs.body->'inputs'`, and three of the four are maps (one hash
+   per schema, per dataset alias, per target endpoint the transform writes), so they cannot be
+   lifted into columns. Since `body` is `JSON` rather than `JSONB` — for payload field order, §4 —
+   Postgres offers no `@>` and no GIN index over them, which makes "every Run that used this schema
+   version" a full scan. The shape when it matters is a `run_inputs(run_id, kind, name, hash)` child
+   table: an *index* over the body, written only by the insert that writes the body, never updated
+   — the same move `number`, `digest`, `status`, `reason` and `actor` already make for the
+   scalar-valued fields. Not worth building until something asks the question.
 
 ---
 

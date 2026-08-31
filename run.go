@@ -187,15 +187,15 @@ func ExecuteRun(eng *Engine, in RunRequest) (*Run, error) {
 		if !ok {
 			return nil, fmt.Errorf("no schema for input %q", inp.As)
 		}
-		if sc.Ref() != inp.Schema {
+		if sc.SchemaName != inp.SchemaName {
 			return nil, fmt.Errorf("input %q: transform expects schema %s, dataset carries %s",
-				inp.As, inp.Schema, sc.Ref())
+				inp.As, inp.SchemaName, sc.SchemaName)
 		}
 		if err := eng.Attach(inp.As, ds.DataPath); err != nil {
 			return nil, err
 		}
 		inputViews[inp.As] = true
-		run.Inputs.Schemas[sc.Ref()] = sc.Hash()
+		run.Inputs.Schemas[sc.String()] = sc.Hash()
 		run.Inputs.Datasets[inp.As] = ds.Hash
 		run.Source.Rows += ds.Rows
 		run.Source.Delivered += ds.Rows + ds.Rejected

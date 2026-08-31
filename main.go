@@ -40,16 +40,16 @@ func main() {
 		log.Fatalf("store: %v", err)
 	}
 
-	// The target spec is part of the deterministic contract, not an optional
-	// extra: validating against it withholds payloads, so a Run without it would
-	// silently produce different output. Refuse to start rather than run
-	// something that cannot be reproduced.
+	// The seed copy of the target contract. Projects are pinned to a stored
+	// version of it at creation and Runs read that; this is only what a new
+	// project starts from. Still mandatory — a project that cannot be pinned to
+	// a contract is one whose Runs could not be reproduced.
 	spec, err := LoadSpec(targetSpecPath())
 	if err != nil {
 		log.Fatalf("target spec: %v", err)
 	}
 	app.Spec = spec
-	log.Printf("target spec %s", targetSpecPath())
+	log.Printf("seed target spec %s (%s)", targetSpecPath(), spec.Hash())
 
 	for name, mt := range types {
 		log.Printf("migration type %s: %d schema(s), transform %q", name, len(mt.Schemas), transformName(mt))

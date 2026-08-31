@@ -15,20 +15,24 @@ import (
 // The raw bytes are kept exactly as delivered and never rewritten: the landed
 // file is the evidence, and schema-on-read means a schema correction is a
 // metadata edit rather than a re-upload (devnotes/design.md §3, Layer 1).
+// A Dataset is identified by the schema it belongs to and the hash of what was
+// delivered. There is deliberately no file name: the delivered file is transport
+// and nothing else, so naming it here would put a label in front of users that
+// means nothing to the work and cannot identify anything — two deliveries can
+// share a name, and one file can be delivered twice.
 type Dataset struct {
-	Name      string `json:"name"`
-	SchemaRef string `json:"schema_ref"`
-	Hash      string `json:"hash"` // content hash of the raw bytes: the Dataset's version
-	RawPath   string `json:"raw_path"`
-	Rows      int    `json:"rows"`      // rows that coerced cleanly and landed
-	Rejected  int    `json:"rejected"`  // rows withheld at coercion
-	DataPath  string `json:"data_path"` // Parquet of the typed rows: the Dataset itself
+	SchemaName
+	Hash     string `json:"hash"` // content hash of the raw bytes: the Dataset's version
+	RawPath  string `json:"raw_path"`
+	Rows     int    `json:"rows"`      // rows that coerced cleanly and landed
+	Rejected int    `json:"rejected"`  // rows withheld at coercion
+	DataPath string `json:"data_path"` // Parquet of the typed rows: the Dataset itself
 }
 
 // Ingest reads a delivered file against its schema, lands the raw bytes, coerces
 // every cell, and writes the typed rows to Parquet. Rows with any coercion
 // failure are withheld and returned as rejects rather than landed half-read.
-func Ingest(eng *Engine, store string, schema *SourceSchema, name string, raw []byte) (*Dataset, []Reject, error) {
+func Ingest(eng *Engine, store string, schema *SourceSchema, raw []byte) (*Dataset, []Reject, error) {
 	hash := fmt.Sprintf("sha256:%x", sha256.Sum256(raw))[:19]
 
 	dir := filepath.Join(store, "datasets", strings.ReplaceAll(hash, ":", "_"))
@@ -59,7 +63,7 @@ func Ingest(eng *Engine, store string, schema *SourceSchema, name string, raw []
 		}
 	}
 	if len(unknown) > 0 {
-		return nil, nil, fmt.Errorf("columns not in schema %s: %s", schema.Ref(), strings.Join(unknown, ", "))
+		return nil, nil, fmt.Errorf("columns not in schema %s: %s", schema.SchemaName, strings.Join(unknown, ", "))
 	}
 	for _, f := range schema.Fields {
 		if f.Required && !contains(header, f.Name) {
@@ -108,7 +112,7 @@ func Ingest(eng *Engine, store string, schema *SourceSchema, name string, raw []
 			rejects = append(rejects, Reject{
 				Class:     RejectRow,
 				Phase:     PhaseCoercion,
-				Entity:    schema.Ref(),
+				Entity:    schema.String(),
 				SourceRow: line,
 				Message:   strings.Join(errs, "; "),
 			})
@@ -124,13 +128,12 @@ func Ingest(eng *Engine, store string, schema *SourceSchema, name string, raw []
 	}
 
 	return &Dataset{
-		Name:      name,
-		SchemaRef: schema.Ref(),
-		Hash:      hash,
-		RawPath:   rawPath,
-		Rows:      len(typed),
-		Rejected:  len(rejects),
-		DataPath:  dataPath,
+		SchemaName: schema.SchemaName,
+		Hash:       hash,
+		RawPath:    rawPath,
+		Rows:       len(typed),
+		Rejected:   len(rejects),
+		DataPath:   dataPath,
 	}, rejects, nil
 }
 

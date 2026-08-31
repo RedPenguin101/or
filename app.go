@@ -30,10 +30,10 @@ type App struct {
 // A MigrationType is one of the big legacy systems. Choosing it at project
 // creation is what supplies the out-of-the-box schemas and transformation rules.
 type MigrationType struct {
-	Name      string                   `json:"name"`
-	Title     string                   `json:"title"`
-	Schemas   map[string]*SourceSchema `json:"schemas"`
-	Transform *Transform               `json:"-"`
+	Name      string                       `json:"name"`
+	Title     string                       `json:"title"`
+	Schemas   map[SchemaName]*SourceSchema `json:"-"`
+	Transform *Transform                   `json:"-"`
 }
 
 var migrationTypeTitles = map[string]string{
@@ -56,7 +56,7 @@ func LoadMigrationTypes(root string) (map[string]*MigrationType, error) {
 		mt := &MigrationType{
 			Name:    e.Name(),
 			Title:   migrationTypeTitles[e.Name()],
-			Schemas: map[string]*SourceSchema{},
+			Schemas: map[SchemaName]*SourceSchema{},
 		}
 		if mt.Title == "" {
 			mt.Title = e.Name()
@@ -67,7 +67,7 @@ func LoadMigrationTypes(root string) (map[string]*MigrationType, error) {
 			if err != nil {
 				return nil, err
 			}
-			mt.Schemas[s.Ref()] = s
+			mt.Schemas[s.SchemaName] = s
 		}
 		tdirs, _ := filepath.Glob(filepath.Join(root, e.Name(), "transforms", "*"))
 		for _, d := range tdirs {
@@ -93,21 +93,43 @@ func (a *App) Type(name string) (*MigrationType, error) {
 	return mt, nil
 }
 
-func (mt *MigrationType) SchemaRefs() []string {
-	out := make([]string, 0, len(mt.Schemas))
+// SchemaNames lists the Migration Type's schemas in a stable order.
+func (mt *MigrationType) SchemaNames() []SchemaName {
+	out := make([]SchemaName, 0, len(mt.Schemas))
 	for k := range mt.Schemas {
 		out = append(out, k)
 	}
-	sort.Strings(out)
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].SourceSystem != out[j].SourceSystem {
+			return out[i].SourceSystem < out[j].SourceSystem
+		}
+		return out[i].Schema < out[j].Schema
+	})
 	return out
 }
 
-// Seed pins a new project to the Migration Type's shipped schemas.
-func (a *App) Seed(ctx context.Context, projectID string, mt *MigrationType) error {
-	for _, ref := range mt.SchemaRefs() {
-		if err := a.DB.PutSchema(ctx, projectID, mt.Schemas[ref]); err != nil {
+// Seed pins a new project to the versions it starts from: the Migration Type's
+// shipped schemas and transform, and the target contract as it stands today.
+//
+// This is the only moment the catalogue on disk is read on a project's behalf.
+// Everything afterwards reads what was pinned here, which is what makes editing
+// the catalogue a change to what new projects begin with rather than a silent
+// change to what every existing one does on its next Run.
+//
+// The pins are the project's own, and they are the whole of what it shares with
+// any other: two projects seeded from the same catalogue hold separate pins that
+// happen to name the same immutable bodies.
+func (a *App) Seed(ctx context.Context, projectID, actor string, mt *MigrationType) error {
+	reason := fmt.Sprintf("seeded from the %s catalogue at project creation", mt.Name)
+	for _, n := range mt.SchemaNames() {
+		if err := a.DB.PutSchema(ctx, projectID, actor, reason, mt.Schemas[n]); err != nil {
 			return err
 		}
 	}
-	return nil
+	if mt.Transform != nil {
+		if err := a.DB.PutTransform(ctx, projectID, actor, reason, mt.Transform); err != nil {
+			return err
+		}
+	}
+	return a.DB.PutSpec(ctx, projectID, actor, reason, a.Spec)
 }

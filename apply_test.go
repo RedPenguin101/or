@@ -22,7 +22,7 @@ func runFAS(t *testing.T) *Run {
 		t.Fatal(err)
 	}
 	eng := testEngine(t)
-	ds, prior, err := Ingest(eng, t.TempDir(), schema, "account_master", raw)
+	ds, prior, err := Ingest(eng, t.TempDir(), schema, raw)
 	if err != nil {
 		t.Fatalf("ingest: %v", err)
 	}
@@ -269,7 +269,7 @@ func TestRuleColumnsMustBeTargetFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	eng := testEngine(t)
-	ds, prior, err := Ingest(eng, t.TempDir(), schema, "account_master", raw)
+	ds, prior, err := Ingest(eng, t.TempDir(), schema, raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -318,7 +318,7 @@ func TestTargetSpecIsPartOfTheContract(t *testing.T) {
 	x, _ := LoadTransform("migration_types/FAS/transforms/fas-accounts")
 	raw, _ := os.ReadFile("testdata/fas_account_master.csv")
 	eng := testEngine(t)
-	ds, prior, err := Ingest(eng, t.TempDir(), schema, "account_master", raw)
+	ds, prior, err := Ingest(eng, t.TempDir(), schema, raw)
 	if err != nil {
 		t.Fatal(err)
 	}

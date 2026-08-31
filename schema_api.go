@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"net/http"
 )
 
@@ -50,17 +49,11 @@ type transformView struct {
 }
 
 func (a *App) getTransform(w http.ResponseWriter, r *http.Request) {
-	p, err := a.DB.GetProject(r.Context(), r.PathValue("id"))
+	x, err := a.DB.GetTransform(r.Context(), r.PathValue("id"))
 	if err != nil {
 		writeErr(w, http.StatusNotFound, err)
 		return
 	}
-	mt, err := a.Type(p.MigrationType)
-	if err != nil || mt.Transform == nil {
-		writeErr(w, http.StatusNotFound, fmt.Errorf("no transform for migration type %s", p.MigrationType))
-		return
-	}
-	x := mt.Transform
 	inputs := map[string]bool{}
 	for _, in := range x.Inputs {
 		inputs[in.As] = true

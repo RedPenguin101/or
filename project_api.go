@@ -17,10 +17,10 @@ func (a *App) registerProjectRoutes(mux *http.ServeMux) {
 }
 
 type migrationTypeView struct {
-	Name      string   `json:"name"`
-	Title     string   `json:"title"`
-	Schemas   []string `json:"schemas"`
-	Transform string   `json:"transform"`
+	Name      string       `json:"name"`
+	Title     string       `json:"title"`
+	Schemas   []SchemaName `json:"schemas"`
+	Transform string       `json:"transform"`
 }
 
 func (a *App) listMigrationTypes(w http.ResponseWriter, r *http.Request) {
@@ -32,7 +32,7 @@ func (a *App) listMigrationTypes(w http.ResponseWriter, r *http.Request) {
 	sort.Strings(names)
 	for _, n := range names {
 		mt := a.Types[n]
-		v := migrationTypeView{Name: mt.Name, Title: mt.Title, Schemas: mt.SchemaRefs()}
+		v := migrationTypeView{Name: mt.Name, Title: mt.Title, Schemas: mt.SchemaNames()}
 		if mt.Transform != nil {
 			v.Transform = mt.Transform.Name
 		}
@@ -87,7 +87,7 @@ func (a *App) createProject(w http.ResponseWriter, r *http.Request) {
 	}
 	// Choosing the Migration Type is what supplies the schemas: a new FAS
 	// project already knows the Account Master before any data arrives.
-	if err := a.Seed(r.Context(), p.ID, mt); err != nil {
+	if err := a.Seed(r.Context(), p.ID, req.Actor, mt); err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
 	}

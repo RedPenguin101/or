@@ -1,6 +1,6 @@
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "../api";
+import { api, schemaKey, schemaPath } from "../api";
 import { ErrorNote, Panel, Pill } from "../components/ui";
 
 // One rule, in full. A rule now carries its whole chain — the source it reads,
@@ -33,11 +33,11 @@ export default function RuleView() {
         <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
           {r.from.map((f) => (
             <Link
-              key={f}
-              to={`/p/${id}/s/${encodeURIComponent(f)}`}
+              key={schemaKey(f)}
+              to={schemaPath(id, f)}
               className="mono rounded-md border border-line px-2 py-1 hover:border-accent hover:text-accent"
             >
-              {f}
+              {schemaKey(f)}
             </Link>
           ))}
           <span className="text-ink-soft">→</span>

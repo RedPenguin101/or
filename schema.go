@@ -9,6 +9,21 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// SchemaName identifies a Source Schema: the Source System it came from, and its
+// name within that system.
+//
+// A pair, not a joined "FAS/ACCOUNT-MASTER" string. Everything that handles one
+// needs both halves, so joining them only to split them again buys nothing and
+// costs a parser — one that meets its first name containing a slash sooner or
+// later. Go compares structs with ==, so testing identity needs no normalising.
+type SchemaName struct {
+	SourceSystem string `yaml:"source_system" json:"source_system"`
+	Schema       string `yaml:"schema"        json:"schema"`
+}
+
+// String is for display and error messages. Nothing parses it back.
+func (n SchemaName) String() string { return n.SourceSystem + "/" + n.Schema }
+
 // A SourceSchema is a named "table" from a Source System: the per-field names,
 // types, descriptions and required flags a Dataset is validated against.
 //
@@ -16,13 +31,12 @@ import (
 // a Run a pure function (devnotes/design.md §4), so the canonical form below is
 // load-bearing, not a convenience.
 type SourceSchema struct {
-	SourceSystem string  `yaml:"source_system" json:"source_system"`
-	Schema       string  `yaml:"schema"        json:"schema"`
-	Title        string  `yaml:"title"         json:"title"`
-	Description  string  `yaml:"description"   json:"description"`
-	Layout       string  `yaml:"layout"        json:"layout"` // csv | fixed (fixed reserved)
-	Header       bool    `yaml:"header"        json:"header"`
-	Fields       []Field `yaml:"fields"        json:"fields"`
+	SchemaName  `yaml:",inline"`
+	Title       string  `yaml:"title"         json:"title"`
+	Description string  `yaml:"description"   json:"description"`
+	Layout      string  `yaml:"layout"        json:"layout"` // csv | fixed (fixed reserved)
+	Header      bool    `yaml:"header"        json:"header"`
+	Fields      []Field `yaml:"fields"        json:"fields"`
 }
 
 type Field struct {
@@ -35,9 +49,6 @@ type Field struct {
 	Values      map[string]string `yaml:"values"      json:"values,omitempty"`
 	NullValues  []string          `yaml:"null_values" json:"null_values,omitempty"`
 }
-
-// Ref is the schema's identity within a Migration Type, e.g. "FAS/ACCOUNT-MASTER".
-func (s *SourceSchema) Ref() string { return s.SourceSystem + "/" + s.Schema }
 
 // Field looks up a field by its source name.
 func (s *SourceSchema) Field(name string) (Field, bool) {

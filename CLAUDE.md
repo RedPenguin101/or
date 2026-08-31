@@ -78,9 +78,44 @@ other the target's — and is OpenAPI only because that is what Qniform emits. N
 contract and left Runs recording a spec hash nothing could resolve. Drift is `spec-check.sh`, and
 adopting a change is a decision, not a refresh.
 
-**Storage is split three ways** and this is deliberate (`design.md` §5): Postgres holds metadata
-only (`db.go`, `migrations/001_initial_schema.sql`); dataset content lands as Parquet under
-`ONRAMP_STORE`, never rewritten; DuckDB (`engine.go`, in-process) is the execution engine.
+**Seed and version are different layers** (`design.md` §4a), and collapsing them is the bug that
+kept transforms unversioned. The files under `migration_types/` and `targets/` are the **seed**: the
+shipped catalogue, hand-editable, read at **project creation and nowhere else** (`App.Seed`). What a
+Run reads is the **version**: a content-addressed body in Postgres, written once, fetched by
+`DB.GetTransform` / `DB.GetSpec` / `DB.ListSchemas`, which verify the body still hashes to its key.
+So editing the catalogue changes what new projects start from and nothing about existing ones.
+
+**The quad is always project-scoped** — never shared between projects. `project_schemas`,
+`project_transforms` and `project_specs` are **write-only logs**: the first row is copied from the
+seed catalogue at project creation, every revision appends another carrying its own body, hash and
+metadata, and nothing is ever updated or deleted. Current = newest row per (project, name), via
+`DISTINCT ON` / `ORDER BY id DESC`; never a flag, which would be a second place for one fact. `id` is
+`GENERATED ALWAYS AS IDENTITY`, so nothing can choose its own place in the history; it is monotonic
+but not contiguous, and only monotonicity is relied on.
+Each row carries `created_by` and a `reason` refused if blank, as a Run's is — the superseded rows
+*are* the audit trail. Do not reintroduce `ON CONFLICT … DO UPDATE` on these tables.
+
+Body and metadata live in one row deliberately. Splitting bodies into a content-addressed table of
+their own deduplicates across projects and reverts, but buys a few MB at the cost of the thing this
+model says is true — that a project shares nothing with another project. `datasets` has the same
+shape, and always did.
+
+Never add a fallback from a project's rows to the seed. "Read the working copy when the project has
+no version of its own" is precisely the failure this removes — such a project must error. Nor is
+there a backfill for projects predating a table: the schema is pre-production and edited in place,
+so a model change is answered by recreating the database, not by migrating it.
+
+**A hash covers the whole body**, never a projection of it — otherwise two different bodies share a
+key and the second stored is silently the first read back. `Transform.Hash` and `SourceSchema.Hash`
+are both `hashJSON` of the whole struct. `Spec` is the exception that proves it: `Hash` identifies
+the document (what the store is keyed by), `HashFor` one endpoint's contract (what a Run records,
+since only endpoints a transform writes are inputs to it).
+
+**Storage is split three ways** and this is deliberate (`design.md` §5): Postgres holds run metadata
+*and* the content-addressed bodies of the three small inputs — schemas, transforms, target specs
+(`db.go`, `migrations/001_initial_schema.sql`); dataset content lands as Parquet under
+`ONRAMP_STORE`, never rewritten; DuckDB (`engine.go`, in-process) is the execution engine. The line
+is size and shape, not category: three small documents against one large columnar store.
 
 **The pipeline**, in the order data moves:
 
@@ -247,4 +282,6 @@ These were renamed deliberately; do not reintroduce the old words.
 | stage (on a Reject) | **phase** | collided with the emissions, which were also "stages" |
 | Prior | **WithheldAtIngest** | says what it holds |
 | triple | **digest** | there are four inputs, not three |
+| a Dataset's file name | *nothing* | the delivered file is transport. A Dataset is identified by its schema and its content hash; a file name labels neither (two deliveries share one, one file is delivered twice) and would put a word in front of users that means nothing to the work |
+| `SourceSchema.Ref()`, `schema_ref`, `ref` | **`SchemaName{SourceSystem, Schema}`** | a schema is named by two things; joining them into `FAS/ACCOUNT-MASTER` only to split them again bought nothing and cost a parser. `String()` / `schemaKey()` remain, for display and DOM keys — never for comparing two schemas |
 | record_version | *nothing* | premature: no run predates this week, and versioning six shapes protected only throwaway data |

@@ -5,6 +5,12 @@ import (
 	"strings"
 )
 
+// TargetSystem names the system OnRamp migrates onto. There is exactly one, and
+// naming it here rather than spelling the string at each use is what lets the
+// spec store, its pin table and the vendored document agree on which target they
+// are talking about.
+const TargetSystem = "qniform"
+
 // qniformLoadOrder ranks target endpoints by Qniform's own referential
 // dependencies: an account cannot name a party that does not exist yet.
 //

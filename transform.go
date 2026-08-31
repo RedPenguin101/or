@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -23,14 +24,13 @@ type Transform struct {
 	Rules       []Rule  `yaml:"rules"       json:"rules"`
 
 	SQL map[string]string `yaml:"-" json:"sql"` // rule name -> the SQL text
-	Dir string            `yaml:"-" json:"-"`
 }
 
 // Input is declared as a list even when it holds one entry, so nothing can grow
 // a 1:1 dataset-to-endpoint assumption by accident (design.md §10, rule 3).
 type Input struct {
-	Schema string `yaml:"schema" json:"schema"`
-	As     string `yaml:"as"     json:"as"`
+	SchemaName `yaml:",inline"`
+	As         string `yaml:"as" json:"as"`
 }
 
 // A Rule is the whole chain from source to target: which schemas it reads, what
@@ -40,11 +40,11 @@ type Input struct {
 // Rules are declared rather than inferred because the valuable part is the
 // prose: what this one does and where it is not the obvious thing.
 type Rule struct {
-	Name    string   `yaml:"name"    json:"name"`
-	Title   string   `yaml:"title"   json:"title"`
-	Summary string   `yaml:"summary" json:"summary"`
-	From    []string `yaml:"from" json:"from"` // Source Schema refs
-	To      string   `yaml:"to"   json:"to"`   // target endpoint, "PUT /parties"
+	Name    string       `yaml:"name"    json:"name"`
+	Title   string       `yaml:"title"   json:"title"`
+	Summary string       `yaml:"summary" json:"summary"`
+	From    []SchemaName `yaml:"from" json:"from"` // the Source Schemas it reads
+	To      string       `yaml:"to"   json:"to"`   // target endpoint, "PUT /parties"
 
 	// The SQL that flattens is sql/<name>.sql, by convention rather than
 	// declaration. A rule has exactly one, so naming it would only create a way
@@ -96,6 +96,12 @@ func (m Mint) IdentityColumn() string {
 	return "code"
 }
 
+// LoadTransform reads a transform from the shipped catalogue on disk.
+//
+// This is the *seed* path: it reads a directory a human edits, and is used when
+// a project is created. Runs read the stored body instead (ParseTransform), so
+// that editing the catalogue changes what new projects start from and nothing
+// about what existing ones do.
 func LoadTransform(dir string) (*Transform, error) {
 	b, err := os.ReadFile(filepath.Join(dir, "transform.yaml"))
 	if err != nil {
@@ -105,7 +111,6 @@ func LoadTransform(dir string) (*Transform, error) {
 	if err := yaml.Unmarshal(b, &x); err != nil {
 		return nil, fmt.Errorf("transform.yaml: %w", err)
 	}
-	x.Dir = dir
 	x.SQL = map[string]string{}
 
 	sqls, _ := filepath.Glob(filepath.Join(dir, "sql", "*.sql"))
@@ -128,6 +133,23 @@ func LoadTransform(dir string) (*Transform, error) {
 				x.Rules[i].Binding.SetOrder(order)
 			}
 		}
+	}
+	if err := x.Validate(); err != nil {
+		return nil, err
+	}
+	return &x, nil
+}
+
+// ParseTransform reads a transform back from its stored body. The directory
+// layout is a convenience for authoring; what is versioned is one object, and
+// this is the form a Run consumes.
+func ParseTransform(body []byte) (*Transform, error) {
+	var x Transform
+	if err := json.Unmarshal(body, &x); err != nil {
+		return nil, fmt.Errorf("transform body: %w", err)
+	}
+	for i := range x.Rules {
+		x.Rules[i].Binding.normalise()
 	}
 	if err := x.Validate(); err != nil {
 		return nil, err
@@ -289,20 +311,15 @@ func (x *Transform) Ordered() []Rule {
 	return out
 }
 
-// Hash is the Transform's version: the manifest and every model's SQL together.
+// Hash is the Transform's version: the manifest and every rule's SQL together.
 // Changing one rule changes the transform, which is what keeps a Run's recorded
 // input versions honest.
-func (x *Transform) Hash() string {
-	type flat struct {
-		Manifest any
-		SQL      map[string]string
-	}
-	m := map[string]any{
-		"name": x.Name, "version": x.Version,
-		"inputs": x.Inputs, "rules": x.Rules,
-	}
-	return hashJSON(flat{Manifest: m, SQL: x.SQL})
-}
+//
+// It hashes the whole serialised body, the way a SourceSchema does, so that the
+// hash covers exactly what the store keeps under it. A hash over some projection
+// of the body would let two different transforms share a key, and the second one
+// stored would silently be the first one read back.
+func (x *Transform) Hash() string { return hashJSON(x) }
 
 var identRe = regexp.MustCompile(`(?i)\b(?:from|join)\s+"?([a-z_][a-z0-9_]*)"?`)
 

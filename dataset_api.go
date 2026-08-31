@@ -39,7 +39,12 @@ func (a *App) uploadDataset(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
-	ref := r.FormValue("schema_ref")
+	// The schema is named in its parts, as it is everywhere else: nothing here
+	// splits a joined string back apart.
+	want := SchemaName{
+		SourceSystem: r.FormValue("source_system"),
+		Schema:       r.FormValue("schema_name"),
+	}
 	actor := r.FormValue("actor")
 	if actor == "" {
 		actor = "unknown"
@@ -52,17 +57,17 @@ func (a *App) uploadDataset(w http.ResponseWriter, r *http.Request) {
 	}
 	var schema *SourceSchema
 	for _, s := range schemas {
-		if s.Ref() == ref {
+		if s.SchemaName == want {
 			schema = s
 			break
 		}
 	}
 	if schema == nil {
-		writeErr(w, http.StatusBadRequest, fmt.Errorf("project %s has no schema %q", p.Name, ref))
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("project %s has no schema %s", p.Name, want))
 		return
 	}
 
-	file, hdr, err := r.FormFile("file")
+	file, _, err := r.FormFile("file")
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err)
 		return
@@ -74,13 +79,8 @@ func (a *App) uploadDataset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	name := r.FormValue("name")
-	if name == "" {
-		name = hdr.Filename
-	}
-
 	a.runMu.Lock()
-	ds, rejects, err := Ingest(a.Engine, a.Store, schema, name, raw)
+	ds, rejects, err := Ingest(a.Engine, a.Store, schema, raw)
 	a.runMu.Unlock()
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err)

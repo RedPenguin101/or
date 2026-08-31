@@ -14,35 +14,95 @@ CREATE TABLE IF NOT EXISTS projects (
     created_by     TEXT        NOT NULL
 );
 
--- Source Schemas are content-addressed: the hash IS the version, so a project
--- referencing a hash is pinned to exactly the schema a Run used.
-CREATE TABLE IF NOT EXISTS source_schemas (
-    hash        TEXT PRIMARY KEY,
-    ref         TEXT        NOT NULL,
-    body        JSONB       NOT NULL,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+-- The three authored inputs to a Run -- schemas, transform, target spec -- are
+-- always the project's own. Nothing is shared between projects: what a project
+-- runs is what its own rows say, and another project revising its copy is not
+-- visible from here. (Folding a project's changes back into the shipped
+-- catalogue, or a catalogue change forward into a running project, is a
+-- deliberate act; there is no path by which either happens implicitly.)
+--
+-- Each table is a write-only log. The first row is copied from the seed
+-- catalogue at project creation; every revision appends another, carrying its
+-- own body, hash and metadata. Nothing is ever updated or deleted: the current
+-- version is the newest row for a (project, name), and the rows it supersedes
+-- are the audit trail -- who changed it, when, and why, which is the part that
+-- still has to be explicable six months later.
+--
+-- Body and metadata live in one row on purpose. Splitting the bodies into a
+-- content-addressed table of their own would deduplicate them across projects
+-- and across reverts, but that is a storage saving of a few MB bought at the
+-- price of the one thing this model says is true -- that a project shares
+-- nothing with another project.
+--
+-- Bodies are JSON, never JSONB: a content-addressed body has to come back
+-- exactly as it went in, and JSONB reserves the right to normalise it.
 
 CREATE TABLE IF NOT EXISTS project_schemas (
-    project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    ref         TEXT NOT NULL,
-    schema_hash TEXT NOT NULL REFERENCES source_schemas(hash),
-    PRIMARY KEY (project_id, ref)
+    -- GENERATED ALWAYS, so nothing can choose its own place in the history:
+    -- an explicit id is rejected rather than accepted and ordered by.
+    id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    project_id    TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    -- The schema's name, in its two natural parts: "FAS", "ACCOUNT-MASTER".
+    -- Together they say which schema's history this row extends.
+    source_system TEXT        NOT NULL,
+    schema_name   TEXT        NOT NULL,
+    hash          TEXT        NOT NULL,
+    body          JSON        NOT NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_by    TEXT        NOT NULL,
+    -- Required, as a Run's is. The audit obligation is about *why*.
+    reason        TEXT        NOT NULL CHECK (length(trim(reason)) > 0)
 );
 
+CREATE TABLE IF NOT EXISTS project_transforms (
+    -- GENERATED ALWAYS, so nothing can choose its own place in the history:
+    -- an explicit id is rejected rather than accepted and ordered by.
+    id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name       TEXT        NOT NULL,
+    hash       TEXT        NOT NULL,
+    body       JSON        NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_by TEXT        NOT NULL,
+    reason     TEXT        NOT NULL CHECK (length(trim(reason)) > 0)
+);
+
+-- The spec body is the document verbatim, as authored: YAML, because that is
+-- what Qniform emits, and reformatting it would change a hash that is supposed
+-- to mean "the same contract".
+CREATE TABLE IF NOT EXISTS project_specs (
+    -- GENERATED ALWAYS, so nothing can choose its own place in the history:
+    -- an explicit id is rejected rather than accepted and ordered by.
+    id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    target     TEXT        NOT NULL,
+    hash       TEXT        NOT NULL,
+    body       TEXT        NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_by TEXT        NOT NULL,
+    reason     TEXT        NOT NULL CHECK (length(trim(reason)) > 0)
+);
+
+CREATE INDEX IF NOT EXISTS project_schemas_current    ON project_schemas    (project_id, source_system, schema_name, id DESC);
+CREATE INDEX IF NOT EXISTS project_transforms_current ON project_transforms (project_id, name, id DESC);
+CREATE INDEX IF NOT EXISTS project_specs_current      ON project_specs      (project_id, target, id DESC);
+
 CREATE TABLE IF NOT EXISTS datasets (
-    id          TEXT PRIMARY KEY,
-    project_id  TEXT        NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    name        TEXT        NOT NULL,
-    schema_ref  TEXT        NOT NULL,
-    hash        TEXT        NOT NULL,   -- content hash of the delivered bytes
-    raw_path    TEXT        NOT NULL,   -- never rewritten: the landed evidence
-    data_path   TEXT        NOT NULL,   -- the Parquet that IS the dataset
-    rows        INTEGER     NOT NULL,
-    rejected    INTEGER     NOT NULL,
-    rejects     JSONB       NOT NULL DEFAULT '[]',
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    created_by  TEXT        NOT NULL
+    id            TEXT PRIMARY KEY,
+    project_id    TEXT        NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    -- Which schema this data was validated against, in the same two parts
+    -- project_schemas names it by. There is no file name: the delivered file is
+    -- transport, and a Dataset is identified by its schema and its content.
+    source_system TEXT        NOT NULL,
+    schema_name   TEXT        NOT NULL,
+    hash          TEXT        NOT NULL,   -- content hash of the delivered bytes
+    raw_path      TEXT        NOT NULL,   -- never rewritten: the landed evidence
+    data_path     TEXT        NOT NULL,   -- the Parquet that IS the dataset
+    rows          INTEGER     NOT NULL,
+    rejected      INTEGER     NOT NULL,
+    rejects       JSONB       NOT NULL DEFAULT '[]',
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_by    TEXT        NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS runs (
@@ -68,29 +128,3 @@ CREATE TABLE IF NOT EXISTS runs (
 
 CREATE INDEX IF NOT EXISTS runs_project_number ON runs (project_id, number DESC);
 CREATE INDEX IF NOT EXISTS datasets_project     ON datasets (project_id, created_at DESC);
-
--- Existing databases were created with JSONB. Guarded so the rewrite happens
--- once rather than on every boot.
-DO $$
-BEGIN
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'runs' AND column_name = 'body' AND data_type = 'jsonb'
-    ) THEN
-        ALTER TABLE runs ALTER COLUMN body TYPE JSON USING body::text::json;
-    END IF;
-
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'runs' AND column_name = 'triple'
-    ) THEN
-        ALTER TABLE runs RENAME COLUMN triple TO digest;
-    END IF;
-
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'datasets' AND column_name = 'stage_path'
-    ) THEN
-        ALTER TABLE datasets RENAME COLUMN stage_path TO data_path;
-    END IF;
-END $$;

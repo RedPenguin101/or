@@ -80,54 +80,124 @@ func (d *DB) GetProject(ctx context.Context, id string) (*Project, error) {
 	return &p, nil
 }
 
-// PutSchema stores a schema under its content hash and pins the project to it.
-// Re-storing the same schema is a no-op: identical content is the same version.
-func (d *DB) PutSchema(ctx context.Context, projectID string, s *SourceSchema) error {
+// PutSchema records a version of one of a project's schemas.
+//
+// project_schemas is a write-only log: this appends, and never updates what it
+// supersedes. The row it adds is the whole of the version — body, hash and the
+// metadata saying who adopted it, when, and why.
+func (d *DB) PutSchema(ctx context.Context, projectID, actor, reason string, s *SourceSchema) error {
 	body, err := json.Marshal(s)
 	if err != nil {
 		return err
 	}
-	tx, err := d.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-	if _, err := tx.Exec(ctx,
-		`INSERT INTO source_schemas (hash, ref, body) VALUES ($1,$2,$3)
-		 ON CONFLICT (hash) DO NOTHING`, s.Hash(), s.Ref(), body); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(ctx,
-		`INSERT INTO project_schemas (project_id, ref, schema_hash) VALUES ($1,$2,$3)
-		 ON CONFLICT (project_id, ref) DO UPDATE SET schema_hash = EXCLUDED.schema_hash`,
-		projectID, s.Ref(), s.Hash()); err != nil {
-		return err
-	}
-	return tx.Commit(ctx)
+	_, err = d.pool.Exec(ctx,
+		`INSERT INTO project_schemas (project_id, source_system, schema_name, hash, body, created_by, reason)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+		projectID, s.SourceSystem, s.Schema, s.Hash(), body, actor, reason)
+	return err
 }
 
+// ListSchemas returns the project's schemas as they now stand: the newest row
+// for each schema. Current is the last version written, never a row flagged as
+// current — a flag would be a second place for the same fact to be recorded.
 func (d *DB) ListSchemas(ctx context.Context, projectID string) ([]*SourceSchema, error) {
 	rows, err := d.pool.Query(ctx,
-		`SELECT ss.body FROM project_schemas ps
-		   JOIN source_schemas ss ON ss.hash = ps.schema_hash
-		  WHERE ps.project_id = $1 ORDER BY ps.ref`, projectID)
+		`SELECT DISTINCT ON (source_system, schema_name) hash, body FROM project_schemas
+		  WHERE project_id = $1 ORDER BY source_system, schema_name, id DESC`, projectID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := []*SourceSchema{}
 	for rows.Next() {
+		var hash string
 		var body []byte
-		if err := rows.Scan(&body); err != nil {
+		if err := rows.Scan(&hash, &body); err != nil {
 			return nil, err
 		}
 		var s SourceSchema
 		if err := json.Unmarshal(body, &s); err != nil {
 			return nil, err
 		}
+		if got := s.Hash(); got != hash {
+			return nil, fmt.Errorf("schema %s hashes to %s: stored body does not match its hash", hash, got)
+		}
 		out = append(out, &s)
 	}
 	return out, rows.Err()
+}
+
+// PutTransform records a version of the project's transform. Appends; see
+// PutSchema.
+func (d *DB) PutTransform(ctx context.Context, projectID, actor, reason string, x *Transform) error {
+	body, err := json.Marshal(x)
+	if err != nil {
+		return err
+	}
+	_, err = d.pool.Exec(ctx,
+		`INSERT INTO project_transforms (project_id, name, hash, body, created_by, reason)
+		 VALUES ($1,$2,$3,$4,$5,$6)`,
+		projectID, x.Name, x.Hash(), body, actor, reason)
+	return err
+}
+
+// GetTransform returns the transform this project now runs.
+//
+// Iteration 1 holds exactly one. Nothing here falls back to the shipped
+// catalogue: reading the working copy when a project has no version of its own
+// is the failure this log exists to remove.
+func (d *DB) GetTransform(ctx context.Context, projectID string) (*Transform, error) {
+	var hash string
+	var body []byte
+	err := d.pool.QueryRow(ctx,
+		`SELECT DISTINCT ON (name) hash, body FROM project_transforms
+		  WHERE project_id = $1 ORDER BY name, id DESC LIMIT 1`, projectID).Scan(&hash, &body)
+	if err != nil {
+		return nil, fmt.Errorf("this project has no transform: %w", err)
+	}
+	x, err := ParseTransform(body)
+	if err != nil {
+		return nil, err
+	}
+	// The hash is what a Run records, so a body that no longer hashes to it is
+	// corruption, not a difference of opinion. Checking costs nothing and is the
+	// only thing that makes "content-addressed" a fact rather than an intention.
+	if got := x.Hash(); got != hash {
+		return nil, fmt.Errorf("transform %s hashes to %s: stored body does not match its hash", hash, got)
+	}
+	return x, nil
+}
+
+// PutSpec records a version of the target contract the project migrates onto.
+// Appends; see PutSchema.
+func (d *DB) PutSpec(ctx context.Context, projectID, actor, reason string, s *Spec) error {
+	_, err := d.pool.Exec(ctx,
+		`INSERT INTO project_specs (project_id, target, hash, body, created_by, reason)
+		 VALUES ($1,$2,$3,$4,$5,$6)`,
+		projectID, TargetSystem, s.Hash(), string(s.Body()), actor, reason)
+	return err
+}
+
+// GetSpec returns the target contract this project now migrates onto — the shape
+// Qniform accepted when the project adopted it, not whatever it accepts today.
+func (d *DB) GetSpec(ctx context.Context, projectID, target string) (*Spec, error) {
+	var hash string
+	var body []byte
+	err := d.pool.QueryRow(ctx,
+		`SELECT hash, body FROM project_specs
+		  WHERE project_id = $1 AND target = $2 ORDER BY id DESC LIMIT 1`,
+		projectID, target).Scan(&hash, &body)
+	if err != nil {
+		return nil, fmt.Errorf("this project has no %s spec: %w", target, err)
+	}
+	s, err := ParseSpec(body)
+	if err != nil {
+		return nil, err
+	}
+	if got := s.Hash(); got != hash {
+		return nil, fmt.Errorf("spec %s hashes to %s: stored body does not match its hash", hash, got)
+	}
+	return s, nil
 }
 
 type DatasetRow struct {
@@ -145,16 +215,16 @@ func (d *DB) PutDataset(ctx context.Context, r DatasetRow) error {
 		return err
 	}
 	_, err = d.pool.Exec(ctx,
-		`INSERT INTO datasets (id, project_id, name, schema_ref, hash, raw_path, data_path, rows, rejected, rejects, created_by)
+		`INSERT INTO datasets (id, project_id, source_system, schema_name, hash, raw_path, data_path, rows, rejected, rejects, created_by)
 		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-		r.ID, r.ProjectID, r.Name, r.SchemaRef, r.Hash, r.RawPath, r.DataPath,
+		r.ID, r.ProjectID, r.SourceSystem, r.Schema, r.Hash, r.RawPath, r.DataPath,
 		r.Rows, r.Rejected, rj, r.CreatedBy)
 	return err
 }
 
 func (d *DB) ListDatasets(ctx context.Context, projectID string) ([]DatasetRow, error) {
 	rows, err := d.pool.Query(ctx,
-		`SELECT id, project_id, name, schema_ref, hash, raw_path, data_path, rows, rejected, rejects, created_at::text, created_by
+		`SELECT id, project_id, source_system, schema_name, hash, raw_path, data_path, rows, rejected, rejects, created_at::text, created_by
 		   FROM datasets WHERE project_id = $1 ORDER BY created_at DESC`, projectID)
 	if err != nil {
 		return nil, err
@@ -164,7 +234,7 @@ func (d *DB) ListDatasets(ctx context.Context, projectID string) ([]DatasetRow, 
 	for rows.Next() {
 		var r DatasetRow
 		var rj []byte
-		if err := rows.Scan(&r.ID, &r.ProjectID, &r.Name, &r.SchemaRef, &r.Hash, &r.RawPath,
+		if err := rows.Scan(&r.ID, &r.ProjectID, &r.SourceSystem, &r.Schema, &r.Hash, &r.RawPath,
 			&r.DataPath, &r.Rows, &r.Rejected, &rj, &r.CreatedAt, &r.CreatedBy); err != nil {
 			return nil, err
 		}

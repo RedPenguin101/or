@@ -1,15 +1,16 @@
 import { useRef } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "../api";
+import { api, schemaKey, sameSchema } from "../api";
+import type { SchemaName } from "../api";
 import { Empty, ErrorNote, Hash, Panel, Pill } from "../components/ui";
 
 // A Source Schema and its data belong on one page: the schema is a claim about
 // what the file contains, the datasets are the files, and the interesting
 // question is always whether the two agree.
 export default function SchemaView() {
-  const { id = "", ref = "" } = useParams();
-  const schemaRef = decodeURIComponent(ref);
+  const { id = "", system = "", name = "" } = useParams();
+  const want: SchemaName = { source_system: decodeURIComponent(system), schema: decodeURIComponent(name) };
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -21,18 +22,20 @@ export default function SchemaView() {
     mutationFn: (file: File) => {
       const fd = new FormData();
       fd.set("file", file);
-      fd.set("schema_ref", schemaRef);
+      fd.set("source_system", want.source_system);
+      fd.set("schema_name", want.schema);
       fd.set("actor", "joe");
       return api.uploadDataset(id, fd);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["p", id, "ds"] }),
   });
 
-  const s = schemas.data?.find((x) => `${x.source_system}/${x.schema}` === schemaRef);
-  const mine = datasets.data?.filter((d) => d.schema_ref === schemaRef) ?? [];
-  const feeds = transform.data?.rules.filter((r) => r.from.includes(schemaRef)) ?? [];
+  const s = schemas.data?.find((x) => sameSchema(x, want));
+  const mine = datasets.data?.filter((d) => sameSchema(d, want)) ?? [];
+  const feeds = transform.data?.rules.filter((r) => r.from.some((f) => sameSchema(f, want))) ?? [];
 
-  if (schemas.isSuccess && !s) return <ErrorNote error={`No schema ${schemaRef} in this project`} />;
+  if (schemas.isSuccess && !s)
+    return <ErrorNote error={`No schema ${schemaKey(want)} in this project`} />;
 
   return (
     <div className="space-y-5">
@@ -92,7 +95,6 @@ export default function SchemaView() {
                 to={`/p/${id}/d/${d.id}`}
                 className="flex items-center gap-3 py-2.5 hover:text-accent"
               >
-                <span className="mono text-sm">{d.name}</span>
                 <Hash value={d.hash} />
                 <span className="text-xs text-ink-soft">{d.rows} rows</span>
                 {d.rejected > 0 && <Pill tone="warn">{d.rejected} withheld at coercion</Pill>}

@@ -7,7 +7,8 @@ description: >
 inputs:
   # A list of one today. Declared as a list so nothing can grow a 1:1
   # dataset-to-endpoint assumption by accident.
-  - schema: FAS/ACCOUNT-MASTER
+  - source_system: FAS
+    schema: ACCOUNT-MASTER
     as: account_master
 
 # A rule is the whole chain: the source it reads, the identity it mints, the SQL
@@ -27,7 +28,7 @@ rules:
       arrives. A joint holding is one party, not two, because Qniform's model has
       a customer account name exactly one counterparty whatever its legal form.
       House accounts have no holder and are skipped.
-    from: [FAS/ACCOUNT-MASTER]
+    from: [{ source_system: FAS, schema: ACCOUNT-MASTER }]
     to: PUT /parties
     mints:
       entity: party
@@ -54,7 +55,7 @@ rules:
       denormalised onto every account and is not kept consistent, so the same
       REP-ID arrives with several spellings; that disagreement quarantines the
       party rather than being silently resolved.
-    from: [FAS/ACCOUNT-MASTER]
+    from: [{ source_system: FAS, schema: ACCOUNT-MASTER }]
     to: PUT /parties
     mints:
       entity: party
@@ -82,7 +83,7 @@ rules:
       inventory account is refused outright — and which role the responsible
       party has to hold. COST-METHOD-CD maps to the lot relief method; a blank
       means none rather than absent.
-    from: [FAS/ACCOUNT-MASTER]
+    from: [{ source_system: FAS, schema: ACCOUNT-MASTER }]
     to: PUT /firms/{firm}/accounts
     mints:
       entity: account

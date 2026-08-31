@@ -30,7 +30,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Projects />} />
           <Route path="/p/:id" element={<Project />} />
-          <Route path="/p/:id/s/:ref" element={<SchemaView />} />
+          <Route path="/p/:id/s/:system/:name" element={<SchemaView />} />
           <Route path="/p/:id/x/:rule" element={<RuleView />} />
           <Route path="/p/:id/target" element={<TargetView />} />
           <Route path="/p/:id/d/:did" element={<DatasetView />} />

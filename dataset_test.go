@@ -26,7 +26,7 @@ func TestIngestFASAccountMaster(t *testing.T) {
 		t.Fatal(err)
 	}
 	eng := testEngine(t)
-	ds, rejects, err := Ingest(eng, t.TempDir(), schema, "account_master", raw)
+	ds, rejects, err := Ingest(eng, t.TempDir(), schema, raw)
 	if err != nil {
 		t.Fatalf("ingest: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestIngestRejectsUnknownColumn(t *testing.T) {
 	eng := testEngine(t)
 	// A column the schema does not know about means the extract changed shape.
 	// That is a schema problem and must fail loudly, not be silently dropped.
-	_, _, err = Ingest(eng, t.TempDir(), schema, "x", []byte("ACCT-NO,SURPRISE\n1,2\n"))
+	_, _, err = Ingest(eng, t.TempDir(), schema, []byte("ACCT-NO,SURPRISE\n1,2\n"))
 	if err == nil {
 		t.Fatal("unknown column should fail ingest")
 	}

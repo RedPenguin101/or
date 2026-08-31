@@ -1,7 +1,7 @@
 export type MigrationType = {
   name: string;
   title: string;
-  schemas: string[];
+  schemas: SchemaName[];
   xform: string;
 };
 
@@ -25,9 +25,20 @@ export type Field = {
   null_values?: string[];
 };
 
-export type Schema = {
+// A Source Schema's identity, in its two parts. The backend never joins them
+// into one string, and neither should this.
+export type SchemaName = {
   source_system: string;
   schema: string;
+};
+
+export const schemaKey = (n: SchemaName) => `${n.source_system}/${n.schema}`;
+export const sameSchema = (a: SchemaName, b: SchemaName) =>
+  a.source_system === b.source_system && a.schema === b.schema;
+export const schemaPath = (projectId: string, n: SchemaName) =>
+  `/p/${projectId}/s/${encodeURIComponent(n.source_system)}/${encodeURIComponent(n.schema)}`;
+
+export type Schema = SchemaName & {
   title: string;
   description: string;
   layout: string;
@@ -49,10 +60,8 @@ export type Reject = {
   cause?: { output: string; identity: string };
 };
 
-export type Dataset = {
+export type Dataset = SchemaName & {
   id: string;
-  name: string;
-  schema_ref: string;
   hash: string;
   rows: number;
   rejected: number;
@@ -118,7 +127,7 @@ export type RunSummary = {
 export type Mint = {
   entity: string;
   prefix: string;
-  from: string[];
+  from: SchemaName[];
   column?: string;
   conflict?: { on: string[]; resolve: string };
 };
@@ -141,7 +150,7 @@ export type Rule = {
   name: string;
   title: string;
   summary: string;
-  from: string[];
+  from: SchemaName[];
   to: string;
   mints: Mint;
   binding: TargetBinding;

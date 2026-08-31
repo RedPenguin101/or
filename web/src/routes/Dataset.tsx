@@ -19,9 +19,9 @@ export default function DatasetView() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-baseline gap-3">
-        <h1 className="mono text-xl font-semibold tracking-tight">{d.name}</h1>
+        <h1 className="mono text-xl font-semibold tracking-tight">{d.schema}</h1>
+        <Pill>{d.source_system}</Pill>
         <Hash value={d.hash} />
-        <Pill>{d.schema_ref}</Pill>
         <span className="text-xs text-ink-soft">
           {d.rows} rows
           {d.rejected > 0 && `, ${d.rejected} unreadable`}

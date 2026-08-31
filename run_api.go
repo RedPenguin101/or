@@ -47,9 +47,17 @@ func (a *App) createRun(w http.ResponseWriter, r *http.Request) {
 		req.Actor = "unknown"
 	}
 
-	mt, err := a.Type(p.MigrationType)
-	if err != nil || mt.Transform == nil {
-		writeErr(w, http.StatusBadRequest, fmt.Errorf("no transform for migration type %s", p.MigrationType))
+	// The transform and the target contract come from what this project is
+	// pinned to, not from the shipped catalogue. A Run is only reproducible if
+	// its inputs are the recorded ones.
+	xform, err := a.DB.GetTransform(r.Context(), projectID)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	spec, err := a.DB.GetSpec(r.Context(), projectID, TargetSystem)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
 
@@ -71,17 +79,17 @@ func (a *App) createRun(w http.ResponseWriter, r *http.Request) {
 		Firm:      p.Firm,
 		Schemas:   map[string]*SourceSchema{},
 		Datasets:  map[string]*Dataset{},
-		Transform: mt.Transform,
-		Spec:      a.Spec,
+		Transform: xform,
+		Spec:      spec,
 	}
-	for _, inp := range mt.Transform.Inputs {
+	for _, inp := range xform.Inputs {
 		for _, s := range schemas {
-			if s.Ref() == inp.Schema {
+			if s.SchemaName == inp.SchemaName {
 				in.Schemas[inp.As] = s
 			}
 		}
 		for i := range datasets { // ListDatasets is newest first
-			if datasets[i].SchemaRef == inp.Schema {
+			if datasets[i].SchemaName == inp.SchemaName {
 				d := datasets[i].Dataset
 				in.Datasets[inp.As] = &d
 				in.WithheldAtIngest = append(in.WithheldAtIngest, datasets[i].Rejects...)
@@ -90,7 +98,7 @@ func (a *App) createRun(w http.ResponseWriter, r *http.Request) {
 		}
 		if in.Datasets[inp.As] == nil {
 			writeErr(w, http.StatusBadRequest,
-				fmt.Errorf("no dataset uploaded for %s, which the transform needs as %q", inp.Schema, inp.As))
+				fmt.Errorf("no dataset uploaded for %s, which the transform needs as %q", inp.SchemaName, inp.As))
 			return
 		}
 	}
