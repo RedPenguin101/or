@@ -25,6 +25,12 @@ export type Field = {
   null_values?: string[];
 };
 
+// A content hash, e.g. "sha256:a6088e2b58c1". An alias, so it is documentation
+// rather than a check — TypeScript is structural, and a branded type would cost
+// a cast at every boundary for a value that only ever arrives from the server.
+// It still stops Record<string, string> from saying nothing about either half.
+export type Hash = string;
+
 // A Source Schema's identity, in its two parts. The backend never joins them
 // into one string, and neither should this.
 export type SchemaName = {
@@ -43,7 +49,7 @@ export type Schema = SchemaName & {
   description: string;
   layout: string;
   fields: Field[];
-  hash: string;
+  hash: Hash;
 };
 
 export type Reject = {
@@ -62,8 +68,8 @@ export type Reject = {
 
 export type Dataset = SchemaName & {
   id: string;
-  hash: string;
-  schema_hash: string;
+  hash: Hash;
+  schema_hash: Hash;
   rows: number;
   rejected: number;
   rejects: Reject[];
@@ -113,18 +119,18 @@ export type Run = {
   // answer "did the mapping change, or the data?" in one comparison.
   inputs: {
     mapping: {
-      schemas: Record<string, string>;
-      transform: string;
-      specs: Record<string, string>;
-      digest: string;
+      schemas: Record<string, Hash>;
+      transform: Hash;
+      specs: Record<string, Hash>;
+      digest: Hash;
     };
     data: {
-      datasets: Record<string, string>;
-      digest: string;
+      datasets: Record<string, Hash>;
+      digest: Hash;
     };
-    digest: string;
+    digest: Hash;
   };
-  nodes: Record<string, { hash: string; cached: boolean; rows_out: number; ms: number }>;
+  nodes: Record<string, { hash: Hash; cached: boolean; rows_out: number; ms: number }>;
   outputs: Output[];
   totals: { emitted: number; accepted: number; rejected: number };
 };
@@ -132,7 +138,7 @@ export type Run = {
 export type RunSummary = {
   id: string;
   number: number;
-  digest: string;
+  digest: Hash;
   reason: string;
   actor: string;
   started_at: string;
@@ -184,7 +190,7 @@ export type Transform = {
   name: string;
   version: number;
   description: string;
-  hash: string;
+  hash: Hash;
   inputs: { schema: string; as: string }[];
   targets: string[];
   rules: Rule[];

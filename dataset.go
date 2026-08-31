@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/sha256"
 	"encoding/csv"
 	"fmt"
 	"io"
@@ -22,13 +21,13 @@ import (
 // share a name, and one file can be delivered twice.
 type Dataset struct {
 	SchemaName
-	Hash string `json:"hash"` // content hash of the raw bytes: the Dataset's version
+	Hash Hash `json:"hash"` // content hash of the raw bytes: the Dataset's version
 
 	// SchemaHash is the version of the schema these bytes were coerced against.
 	// Rows and Rejected are a function of it, so without it neither number can
 	// be explained — the same file against a revised null sentinel is a
 	// different Dataset.
-	SchemaHash string `json:"schema_hash"`
+	SchemaHash Hash `json:"schema_hash"`
 
 	Rows     int `json:"rows"`     // rows that coerced cleanly and landed
 	Rejected int `json:"rejected"` // rows withheld at coercion
@@ -47,8 +46,8 @@ const (
 	dataFile = "rows.parquet"
 )
 
-func datasetDir(store, hash string) string {
-	return filepath.Join(store, "datasets", strings.ReplaceAll(hash, ":", "_"))
+func datasetDir(store string, hash Hash) string {
+	return filepath.Join(store, "datasets", strings.ReplaceAll(string(hash), ":", "_"))
 }
 
 // RawPath is the delivered bytes, exactly as they arrived: the landed evidence.
@@ -65,7 +64,7 @@ func (d *Dataset) DataPath(store string) string {
 // every cell, and writes the typed rows to Parquet. Rows with any coercion
 // failure are withheld and returned as rejects rather than landed half-read.
 func Ingest(eng *Engine, store string, schema *SourceSchema, raw []byte) (*Dataset, []Reject, error) {
-	hash := fmt.Sprintf("sha256:%x", sha256.Sum256(raw))[:19]
+	hash := hashBytes(raw)
 
 	dir := datasetDir(store, hash)
 	if err := os.MkdirAll(dir, 0o755); err != nil {

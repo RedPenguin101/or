@@ -71,26 +71,28 @@ type InputVersions struct {
 	// A digest nested inside the record it describes necessarily covers the
 	// fields beside it rather than itself. That is unlike a stored body, whose
 	// hash is its key and must cover the whole thing.
-	Digest string `json:"digest"`
+	Digest Hash `json:"digest"`
 }
 
+// Keys are names, values are hashes. Schemas are keyed by the schema's name,
+// Specs by the target endpoint, Datasets by the transform input's alias.
 type MappingVersions struct {
-	Schemas   map[string]string `json:"schemas"`
-	Transform string            `json:"transform"`
-	Specs     map[string]string `json:"specs"`
-	Digest    string            `json:"digest"`
+	Schemas   map[string]Hash `json:"schemas"`
+	Transform Hash            `json:"transform"`
+	Specs     map[string]Hash `json:"specs"`
+	Digest    Hash            `json:"digest"`
 }
 
 type DataVersions struct {
-	Datasets map[string]string `json:"datasets"` // input alias -> dataset content hash
-	Digest   string            `json:"digest"`
+	Datasets map[string]Hash `json:"datasets"`
+	Digest   Hash            `json:"digest"`
 }
 
 type NodeStat struct {
-	Hash   string `json:"hash"`
-	Cached bool   `json:"cached"`
-	Rows   int    `json:"rows_out"`
-	Ms     int64  `json:"ms"`
+	Hash   Hash  `json:"hash"`
+	Cached bool  `json:"cached"`
+	Rows   int   `json:"rows_out"`
+	Ms     int64 `json:"ms"`
 }
 
 // RuleOutput is what one Rule produced: the payloads it emitted to its target
@@ -172,7 +174,7 @@ func ExecuteRun(eng *Engine, store string, in RunRequest) (*Run, error) {
 		Nodes:     map[string]NodeStat{},
 		Inputs: InputVersions{
 			Mapping: mv,
-			Data:    DataVersions{Datasets: map[string]string{}},
+			Data:    DataVersions{Datasets: map[string]Hash{}},
 		},
 	}
 
@@ -199,7 +201,7 @@ func ExecuteRun(eng *Engine, store string, in RunRequest) (*Run, error) {
 		run.Read[inp.As] = in.DatasetID[inp.As]
 	}
 	run.Inputs.Data.Digest = hashJSON(run.Inputs.Data.Datasets)
-	run.Inputs.Digest = hashJSON([]string{run.Inputs.Mapping.Digest, run.Inputs.Data.Digest})
+	run.Inputs.Digest = hashJSON([]Hash{run.Inputs.Mapping.Digest, run.Inputs.Data.Digest})
 
 	// mintRef applies a rule's prefix to a raw source key. A reference never
 	// restates the mint expression, so the two cannot drift apart.
@@ -225,7 +227,7 @@ func ExecuteRun(eng *Engine, store string, in RunRequest) (*Run, error) {
 		// A node's hash folds in its inputs, so changing one rule invalidates
 		// only what depends on it rather than the world (design.md §4).
 		run.Nodes[rule.Name] = NodeStat{
-			Hash:   hashJSON([]string{in.Mapping.Transform.SQL[rule.Name], run.Inputs.Digest}),
+			Hash:   hashJSON([]any{in.Mapping.Transform.SQL[rule.Name], run.Inputs.Digest}),
 			Cached: false, Rows: n, Ms: time.Since(t0).Milliseconds(),
 		}
 

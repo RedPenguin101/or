@@ -49,8 +49,8 @@ func (m *Mapping) Admits(ds *Dataset) error {
 // over all of them.
 func (m *Mapping) Versions() (MappingVersions, error) {
 	v := MappingVersions{
-		Schemas:   map[string]string{},
-		Specs:     map[string]string{},
+		Schemas:   map[string]Hash{},
+		Specs:     map[string]Hash{},
 		Transform: m.Transform.Hash(),
 	}
 	for name, sc := range m.Schemas {
@@ -68,9 +68,9 @@ func (m *Mapping) Versions() (MappingVersions, error) {
 		}
 	}
 	v.Digest = hashJSON(struct {
-		Schemas   map[string]string
-		Transform string
-		Specs     map[string]string
+		Schemas   map[string]Hash
+		Transform Hash
+		Specs     map[string]Hash
 	}{v.Schemas, v.Transform, v.Specs})
 	return v, nil
 }

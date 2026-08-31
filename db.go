@@ -110,7 +110,7 @@ func (d *DB) ListSchemas(ctx context.Context, projectID string) ([]*SourceSchema
 	defer rows.Close()
 	out := []*SourceSchema{}
 	for rows.Next() {
-		var hash string
+		var hash Hash
 		var body []byte
 		if err := rows.Scan(&hash, &body); err != nil {
 			return nil, err
@@ -174,7 +174,7 @@ func (d *DB) PutTransform(ctx context.Context, projectID, actor, reason string, 
 // catalogue: reading the working copy when a project has no version of its own
 // is the failure this log exists to remove.
 func (d *DB) GetTransform(ctx context.Context, projectID string) (*Transform, error) {
-	var hash string
+	var hash Hash
 	var body []byte
 	err := d.pool.QueryRow(ctx,
 		`SELECT DISTINCT ON (name) hash, body FROM project_transforms
@@ -208,7 +208,7 @@ func (d *DB) PutSpec(ctx context.Context, projectID, actor, reason string, s *Sp
 // GetSpec returns the target contract this project now migrates onto — the shape
 // Qniform accepted when the project adopted it, not whatever it accepts today.
 func (d *DB) GetSpec(ctx context.Context, projectID, target string) (*Spec, error) {
-	var hash string
+	var hash Hash
 	var body []byte
 	err := d.pool.QueryRow(ctx,
 		`SELECT hash, body FROM project_specs
@@ -294,7 +294,7 @@ func (d *DB) PutRun(ctx context.Context, id, projectID string, r *Run) error {
 type RunSummary struct {
 	ID        string `json:"id"`
 	Number    int    `json:"number"`
-	Digest    string `json:"digest"`
+	Digest    Hash   `json:"digest"`
 	Reason    string `json:"reason"`
 	Actor     string `json:"actor"`
 	StartedAt string `json:"started_at"`

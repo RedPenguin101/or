@@ -1,8 +1,6 @@
 package main
 
 import (
-	"crypto/sha256"
-	"encoding/json"
 	"fmt"
 	"os"
 
@@ -63,17 +61,7 @@ func (s *SourceSchema) Field(name string) (Field, bool) {
 // Hash is the schema's version. Descriptions are included deliberately: a
 // changed description is a changed understanding of the field, which is exactly
 // the kind of knowledge the audit trail exists to preserve.
-func (s *SourceSchema) Hash() string { return hashJSON(s) }
-
-// hashJSON canonicalises through encoding/json, which sorts map keys, so the
-// hash is stable across runs and across YAML formatting changes.
-func hashJSON(v any) string {
-	b, err := json.Marshal(v)
-	if err != nil {
-		panic(fmt.Sprintf("canonicalise: %v", err)) // struct types only; cannot fail
-	}
-	return fmt.Sprintf("sha256:%x", sha256.Sum256(b))[:19]
-}
+func (s *SourceSchema) Hash() Hash { return hashJSON(s) }
 
 func LoadSourceSchema(path string) (*SourceSchema, error) {
 	b, err := os.ReadFile(path)

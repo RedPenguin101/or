@@ -14,7 +14,7 @@ func (a *App) registerSchemaRoutes(mux *http.ServeMux) {
 // being something the UI has to ask for separately.
 type schemaView struct {
 	*SourceSchema
-	Hash string `json:"hash"`
+	Hash Hash `json:"hash"`
 }
 
 func (a *App) listSchemas(w http.ResponseWriter, r *http.Request) {
@@ -40,7 +40,7 @@ type transformView struct {
 	Name        string              `json:"name"`
 	Version     int                 `json:"version"`
 	Description string              `json:"description"`
-	Hash        string              `json:"hash"`
+	Hash        Hash                `json:"hash"`
 	Inputs      []Input             `json:"inputs"`
 	Targets     []string            `json:"targets"`
 	Rules       []Rule              `json:"rules"`

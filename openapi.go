@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/sha256"
 	"fmt"
 	"os"
 	"sort"
@@ -94,9 +93,7 @@ func (s *Spec) Body() []byte { return s.raw }
 // transform writes are inputs to it. This one answers a different question —
 // which document is this — and a Run needs both: the per-endpoint hashes to say
 // what it depended on, this one to find the bytes again.
-func (s *Spec) Hash() string {
-	return fmt.Sprintf("sha256:%x", sha256.Sum256(s.raw))[:19]
-}
+func (s *Spec) Hash() Hash { return hashBytes(s.raw) }
 
 // TargetDoc is what the target system says about one endpoint: its own prose and
 // the shape it accepts. Read alongside what the rules actually bind (see
@@ -271,7 +268,7 @@ func targetSpecPath() string {
 // changes the output — but only the endpoints a transform actually writes are
 // inputs to it. A typo in an unrelated endpoint's prose should not invalidate a
 // run that never touched it.
-func (s *Spec) HashFor(target string) (string, error) {
+func (s *Spec) HashFor(target string) (Hash, error) {
 	doc, err := s.Describe(target)
 	if err != nil {
 		return "", err

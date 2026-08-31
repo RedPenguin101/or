@@ -319,7 +319,7 @@ func (x *Transform) Ordered() []Rule {
 // hash covers exactly what the store keeps under it. A hash over some projection
 // of the body would let two different transforms share a key, and the second one
 // stored would silently be the first one read back.
-func (x *Transform) Hash() string { return hashJSON(x) }
+func (x *Transform) Hash() Hash { return hashJSON(x) }
 
 var identRe = regexp.MustCompile(`(?i)\b(?:from|join)\s+"?([a-z_][a-z0-9_]*)"?`)
 

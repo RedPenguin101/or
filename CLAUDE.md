@@ -123,6 +123,13 @@ no version of its own" is precisely the failure this removes — such a project 
 there a backfill for projects predating a table: the schema is pre-production and edited in place,
 so a model change is answered by recreating the database, not by migrating it.
 
+**`Hash` (`hash.go`) is a defined type, not an alias** — so the compiler can tell a hash from the
+several other strings beside it, and `map[string]Hash` says which half is which where
+`map[string]string` said nothing. `hashJSON` canonicalises through `encoding/json` (sorted map keys,
+stable across YAML formatting); `hashBytes` is for content that is already bytes — a delivered file,
+a spec document — where canonicalising would change what the hash means. The frontend's `Hash` is
+only an alias: TypeScript is structural, so it documents without checking.
+
 **A hash covers the whole body**, never a projection of it — otherwise two different bodies share a
 key and the second stored is silently the first read back. `Transform.Hash` and `SourceSchema.Hash`
 are both `hashJSON` of the whole struct. `Spec` is the exception that proves it: `Hash` identifies
