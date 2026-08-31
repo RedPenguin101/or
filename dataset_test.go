@@ -26,7 +26,8 @@ func TestIngestFASAccountMaster(t *testing.T) {
 		t.Fatal(err)
 	}
 	eng := testEngine(t)
-	ds, rejects, err := Ingest(eng, t.TempDir(), schema, raw)
+	store := t.TempDir()
+	ds, rejects, err := Ingest(eng, store, schema, raw)
 	if err != nil {
 		t.Fatalf("ingest: %v", err)
 	}
@@ -44,7 +45,7 @@ func TestIngestFASAccountMaster(t *testing.T) {
 		t.Errorf("landed rows = %d, want 19", ds.Rows)
 	}
 
-	if err := eng.Attach("stg_account_master", ds.DataPath); err != nil {
+	if err := eng.Attach("stg_account_master", ds.DataPath(store)); err != nil {
 		t.Fatalf("attach: %v", err)
 	}
 

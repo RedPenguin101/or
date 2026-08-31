@@ -110,7 +110,7 @@ func (a *App) createRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.runMu.Lock()
-	run, err := ExecuteRun(a.Engine, in)
+	run, err := ExecuteRun(a.Engine, a.Store, in)
 	a.runMu.Unlock()
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err)

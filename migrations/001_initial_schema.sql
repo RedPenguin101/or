@@ -95,9 +95,11 @@ CREATE TABLE IF NOT EXISTS datasets (
     -- transport, and a Dataset is identified by its schema and its content.
     source_system TEXT        NOT NULL,
     schema_name   TEXT        NOT NULL,
-    hash          TEXT        NOT NULL,   -- content hash of the delivered bytes
-    raw_path      TEXT        NOT NULL,   -- never rewritten: the landed evidence
-    data_path     TEXT        NOT NULL,   -- the Parquet that IS the dataset
+    -- The content hash of the delivered bytes. Where those bytes and the Parquet
+    -- derived from them sit under ONRAMP_STORE is computed from this hash, never
+    -- stored: a stored path cannot be re-derived once it is wrong, and renaming
+    -- the Parquet file left every row here pointing at a name that had gone.
+    hash          TEXT        NOT NULL,
     rows          INTEGER     NOT NULL,
     rejected      INTEGER     NOT NULL,
     rejects       JSONB       NOT NULL DEFAULT '[]',

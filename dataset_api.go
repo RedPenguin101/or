@@ -132,7 +132,7 @@ func (a *App) datasetRows(w http.ResponseWriter, r *http.Request) {
 	a.runMu.Lock()
 	defer a.runMu.Unlock()
 	rows, err := a.Engine.Query(fmt.Sprintf(
-		"SELECT * FROM read_parquet('%s') ORDER BY __row LIMIT %d", target.DataPath, limit))
+		"SELECT * FROM read_parquet('%s') ORDER BY __row LIMIT %d", target.DataPath(a.Store), limit))
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return

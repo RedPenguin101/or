@@ -22,11 +22,36 @@ import (
 // share a name, and one file can be delivered twice.
 type Dataset struct {
 	SchemaName
-	Hash     string `json:"hash"` // content hash of the raw bytes: the Dataset's version
-	RawPath  string `json:"raw_path"`
-	Rows     int    `json:"rows"`      // rows that coerced cleanly and landed
-	Rejected int    `json:"rejected"`  // rows withheld at coercion
-	DataPath string `json:"data_path"` // Parquet of the typed rows: the Dataset itself
+	Hash     string `json:"hash"`     // content hash of the raw bytes: the Dataset's version
+	Rows     int    `json:"rows"`     // rows that coerced cleanly and landed
+	Rejected int    `json:"rejected"` // rows withheld at coercion
+}
+
+// Where a Dataset's files live. One directory per content hash, written once and
+// never rewritten.
+//
+// Derived from the hash, never stored. A stored path is a second source of truth
+// that cannot be re-derived once it is wrong: the Parquet file was renamed from
+// staged.parquet to rows.parquet and every row already written kept pointing at
+// a name that no longer existed. The hash is the only durable part, so the path
+// is computed from it at the moment of use.
+const (
+	rawFile  = "raw.csv"
+	dataFile = "rows.parquet"
+)
+
+func datasetDir(store, hash string) string {
+	return filepath.Join(store, "datasets", strings.ReplaceAll(hash, ":", "_"))
+}
+
+// RawPath is the delivered bytes, exactly as they arrived: the landed evidence.
+func (d *Dataset) RawPath(store string) string {
+	return filepath.Join(datasetDir(store, d.Hash), rawFile)
+}
+
+// DataPath is the Parquet of the typed rows — the Dataset itself.
+func (d *Dataset) DataPath(store string) string {
+	return filepath.Join(datasetDir(store, d.Hash), dataFile)
 }
 
 // Ingest reads a delivered file against its schema, lands the raw bytes, coerces
@@ -35,12 +60,11 @@ type Dataset struct {
 func Ingest(eng *Engine, store string, schema *SourceSchema, raw []byte) (*Dataset, []Reject, error) {
 	hash := fmt.Sprintf("sha256:%x", sha256.Sum256(raw))[:19]
 
-	dir := filepath.Join(store, "datasets", strings.ReplaceAll(hash, ":", "_"))
+	dir := datasetDir(store, hash)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, nil, err
 	}
-	rawPath := filepath.Join(dir, "raw.csv")
-	if err := os.WriteFile(rawPath, raw, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, rawFile), raw, 0o644); err != nil {
 		return nil, nil, err
 	}
 
@@ -122,18 +146,15 @@ func Ingest(eng *Engine, store string, schema *SourceSchema, raw []byte) (*Datas
 		srcRows = append(srcRows, line)
 	}
 
-	dataPath := filepath.Join(dir, "rows.parquet")
-	if err := eng.WriteDataset(dataPath, schema, typed, srcRows); err != nil {
+	if err := eng.WriteDataset(filepath.Join(dir, dataFile), schema, typed, srcRows); err != nil {
 		return nil, nil, err
 	}
 
 	return &Dataset{
 		SchemaName: schema.SchemaName,
 		Hash:       hash,
-		RawPath:    rawPath,
 		Rows:       len(typed),
 		Rejected:   len(rejects),
-		DataPath:   dataPath,
 	}, rejects, nil
 }
 

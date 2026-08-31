@@ -22,11 +22,12 @@ func runFAS(t *testing.T) *Run {
 		t.Fatal(err)
 	}
 	eng := testEngine(t)
-	ds, prior, err := Ingest(eng, t.TempDir(), schema, raw)
+	store := t.TempDir()
+	ds, prior, err := Ingest(eng, store, schema, raw)
 	if err != nil {
 		t.Fatalf("ingest: %v", err)
 	}
-	run, err := ExecuteRun(eng, RunRequest{
+	run, err := ExecuteRun(eng, store, RunRequest{
 		Number: 1, Project: "fas-demo", Reason: "walking skeleton",
 		Actor: Actor{Kind: "test", ID: "go"}, Firm: "PERSUS",
 		Schemas:   map[string]*SourceSchema{"account_master": schema},
@@ -269,11 +270,12 @@ func TestRuleColumnsMustBeTargetFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	eng := testEngine(t)
-	ds, prior, err := Ingest(eng, t.TempDir(), schema, raw)
+	store := t.TempDir()
+	ds, prior, err := Ingest(eng, store, schema, raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = ExecuteRun(eng, RunRequest{
+	_, err = ExecuteRun(eng, store, RunRequest{
 		Number: 1, Project: "fas-demo", Reason: "guard", Actor: Actor{Kind: "test", ID: "go"},
 		Firm:      "PERSUS",
 		Schemas:   map[string]*SourceSchema{"account_master": schema},
@@ -318,11 +320,12 @@ func TestTargetSpecIsPartOfTheContract(t *testing.T) {
 	x, _ := LoadTransform("migration_types/FAS/transforms/fas-accounts")
 	raw, _ := os.ReadFile("testdata/fas_account_master.csv")
 	eng := testEngine(t)
-	ds, prior, err := Ingest(eng, t.TempDir(), schema, raw)
+	store := t.TempDir()
+	ds, prior, err := Ingest(eng, store, schema, raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	changed, err := ExecuteRun(eng, RunRequest{
+	changed, err := ExecuteRun(eng, store, RunRequest{
 		Number: 1, Project: "fas-demo", Reason: "narrowed contract",
 		Actor: Actor{Kind: "test", ID: "go"}, Firm: "PERSUS",
 		Schemas:   map[string]*SourceSchema{"account_master": schema},

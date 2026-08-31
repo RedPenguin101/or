@@ -156,9 +156,11 @@ type RunRequest struct {
 // including which identities to quarantine — is a function of those inputs, so
 // the same digest always produces the same Run.
 //
-// The Engine is a parameter rather than part of the request: it is the machine
-// that executes, not something the request is about.
-func ExecuteRun(eng *Engine, in RunRequest) (*Run, error) {
+// The Engine and the store root are parameters rather than part of the request:
+// one is the machine that executes and the other is where the bytes happen to
+// sit. Neither is something the request is about, and neither is an input to the
+// Run's identity.
+func ExecuteRun(eng *Engine, store string, in RunRequest) (*Run, error) {
 	started := time.Now()
 
 	run := &Run{
@@ -191,7 +193,7 @@ func ExecuteRun(eng *Engine, in RunRequest) (*Run, error) {
 			return nil, fmt.Errorf("input %q: transform expects schema %s, dataset carries %s",
 				inp.As, inp.SchemaName, sc.SchemaName)
 		}
-		if err := eng.Attach(inp.As, ds.DataPath); err != nil {
+		if err := eng.Attach(inp.As, ds.DataPath(store)); err != nil {
 			return nil, err
 		}
 		inputViews[inp.As] = true
