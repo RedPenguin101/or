@@ -22,6 +22,12 @@ Qniform's OpenAPI spec are recorded in its §1 and are expensive to rediscover.
 - `go test .` — the Go suite. It loads the target spec from `targets/qniform/openapi.yaml` and
   fails rather than skipping if absent, deliberately: a silently skipped spec check is how
   "Qniform-shaped" output drifts into being a mock.
+- `bash reseed.sh` — drop the database and the Parquet store, rebuild both, and seed a FAS demo
+  project with the sample extract and one run. Destructive and cheap by design: the schema is
+  pre-production and edited in place, so a model change is answered by recreating the database
+  rather than migrating it. Refuses while anything holds `ONRAMP_ADDR`; `-y` skips the prompt. An
+  exported `DATABASE_URL` overrides `.env`, so a throwaway database can be reseeded without
+  touching the one your server reads.
 - `bash spec-check.sh` — reports drift between OnRamp's copy of the target contract and Qniform's
   own. Out of band on purpose; nothing in a Run reads the Qniform repository.
 - `go test -run TestApplyFanOutAndCascade .` — one test.
