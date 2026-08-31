@@ -10,12 +10,12 @@ import (
 )
 
 // App is the shared state every handler reads. Deliberately small: the system's
-// substance is in the artifacts on disk (schemas, models, emitters) and the
-// content-addressed data, not in server memory.
+// substance is in each project's own mapping and its content-addressed data, not
+// in server memory. Types holds only the shipped catalogue new projects start
+// from.
 type App struct {
 	DB     *DB
 	Engine *Engine
-	Spec   *Spec
 	Store  string
 
 	Types map[string]*MigrationType
@@ -30,10 +30,12 @@ type App struct {
 // A MigrationType is one of the big legacy systems. Choosing it at project
 // creation is what supplies the out-of-the-box schemas and transformation rules.
 type MigrationType struct {
-	Name      string                       `json:"name"`
-	Title     string                       `json:"title"`
-	Schemas   map[SchemaName]*SourceSchema `json:"-"`
-	Transform *Transform                   `json:"-"`
+	Name  string `json:"name"`
+	Title string `json:"title"`
+
+	// Mapping is the out-of-the-box mapping this Migration Type ships — the same
+	// shape a project holds, so seeding is a copy rather than an assembly.
+	Mapping *Mapping `json:"-"`
 }
 
 var migrationTypeTitles = map[string]string{
@@ -56,7 +58,7 @@ func LoadMigrationTypes(root string) (map[string]*MigrationType, error) {
 		mt := &MigrationType{
 			Name:    e.Name(),
 			Title:   migrationTypeTitles[e.Name()],
-			Schemas: map[SchemaName]*SourceSchema{},
+			Mapping: &Mapping{Schemas: map[SchemaName]*SourceSchema{}},
 		}
 		if mt.Title == "" {
 			mt.Title = e.Name()
@@ -67,7 +69,7 @@ func LoadMigrationTypes(root string) (map[string]*MigrationType, error) {
 			if err != nil {
 				return nil, err
 			}
-			mt.Schemas[s.SchemaName] = s
+			mt.Mapping.Schemas[s.SchemaName] = s
 		}
 		tdirs, _ := filepath.Glob(filepath.Join(root, e.Name(), "transforms", "*"))
 		for _, d := range tdirs {
@@ -75,7 +77,7 @@ func LoadMigrationTypes(root string) (map[string]*MigrationType, error) {
 			if err != nil {
 				return nil, err
 			}
-			mt.Transform = x // iteration 1 ships exactly one transform per Migration Type
+			mt.Mapping.Transform = x // iteration 1 ships exactly one transform per Migration Type
 		}
 		out[e.Name()] = mt
 	}
@@ -95,8 +97,8 @@ func (a *App) Type(name string) (*MigrationType, error) {
 
 // SchemaNames lists the Migration Type's schemas in a stable order.
 func (mt *MigrationType) SchemaNames() []SchemaName {
-	out := make([]SchemaName, 0, len(mt.Schemas))
-	for k := range mt.Schemas {
+	out := make([]SchemaName, 0, len(mt.Mapping.Schemas))
+	for k := range mt.Mapping.Schemas {
 		out = append(out, k)
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -121,15 +123,16 @@ func (mt *MigrationType) SchemaNames() []SchemaName {
 // happen to name the same immutable bodies.
 func (a *App) Seed(ctx context.Context, projectID, actor string, mt *MigrationType) error {
 	reason := fmt.Sprintf("seeded from the %s catalogue at project creation", mt.Name)
+	m := mt.Mapping
 	for _, n := range mt.SchemaNames() {
-		if err := a.DB.PutSchema(ctx, projectID, actor, reason, mt.Schemas[n]); err != nil {
+		if err := a.DB.PutSchema(ctx, projectID, actor, reason, m.Schemas[n]); err != nil {
 			return err
 		}
 	}
-	if mt.Transform != nil {
-		if err := a.DB.PutTransform(ctx, projectID, actor, reason, mt.Transform); err != nil {
+	if m.Transform != nil {
+		if err := a.DB.PutTransform(ctx, projectID, actor, reason, m.Transform); err != nil {
 			return err
 		}
 	}
-	return a.DB.PutSpec(ctx, projectID, actor, reason, a.Spec)
+	return a.DB.PutSpec(ctx, projectID, actor, reason, m.Spec)
 }

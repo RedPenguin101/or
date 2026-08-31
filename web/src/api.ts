@@ -95,11 +95,20 @@ export type Run = {
   read: Record<string, string>;
   // Four things a Run is a function of: what the source looks like, what the
   // target looks like, how to map between them, and the data itself.
+  // Two halves, because the four inputs are two kinds of thing: the mapping is
+  // authored and revised by decision, the data is delivered. Separate digests
+  // answer "did the mapping change, or the data?" in one comparison.
   inputs: {
-    schemas: Record<string, string>;
-    specs: Record<string, string>;
-    transform: string;
-    datasets: Record<string, string>;
+    mapping: {
+      schemas: Record<string, string>;
+      transform: string;
+      specs: Record<string, string>;
+      digest: string;
+    };
+    data: {
+      datasets: Record<string, string>;
+      digest: string;
+    };
     digest: string;
   };
   nodes: Record<string, { hash: string; cached: boolean; rows_out: number; ms: number }>;

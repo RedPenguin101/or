@@ -30,9 +30,12 @@ func runFAS(t *testing.T) *Run {
 	run, err := ExecuteRun(eng, store, RunRequest{
 		Number: 1, Project: "fas-demo", Reason: "walking skeleton",
 		Actor: Actor{Kind: "test", ID: "go"}, Firm: "PERSUS",
-		Schemas:   map[string]*SourceSchema{"account_master": schema},
-		Datasets:  map[string]*Dataset{"account_master": ds},
-		Transform: x, WithheldAtIngest: prior, Spec: mustSpec(t),
+		Mapping: &Mapping{
+			Schemas:   map[SchemaName]*SourceSchema{schema.SchemaName: schema},
+			Transform: x, Spec: mustSpec(t),
+		},
+		Datasets:         map[string]*Dataset{"account_master": ds},
+		WithheldAtIngest: prior,
 	})
 	if err != nil {
 		t.Fatalf("apply: %v", err)
@@ -277,10 +280,13 @@ func TestRuleColumnsMustBeTargetFields(t *testing.T) {
 	}
 	_, err = ExecuteRun(eng, store, RunRequest{
 		Number: 1, Project: "fas-demo", Reason: "guard", Actor: Actor{Kind: "test", ID: "go"},
-		Firm:      "PERSUS",
-		Schemas:   map[string]*SourceSchema{"account_master": schema},
-		Datasets:  map[string]*Dataset{"account_master": ds},
-		Transform: x, WithheldAtIngest: prior, Spec: mustSpec(t),
+		Firm: "PERSUS",
+		Mapping: &Mapping{
+			Schemas:   map[SchemaName]*SourceSchema{schema.SchemaName: schema},
+			Transform: x, Spec: mustSpec(t),
+		},
+		Datasets:         map[string]*Dataset{"account_master": ds},
+		WithheldAtIngest: prior,
 	})
 	if err == nil {
 		t.Fatal("a column that means nothing to the target must fail the run")
@@ -296,11 +302,11 @@ func TestRuleColumnsMustBeTargetFields(t *testing.T) {
 func TestTargetSpecIsPartOfTheContract(t *testing.T) {
 	t.Parallel()
 	base := runFAS(t)
-	if len(base.Inputs.Specs) != 2 {
-		t.Fatalf("recorded specs = %v, want one per target written", base.Inputs.Specs)
+	if len(base.Inputs.Mapping.Specs) != 2 {
+		t.Fatalf("recorded specs = %v, want one per target written", base.Inputs.Mapping.Specs)
 	}
 	for _, target := range []string{"PUT /parties", "PUT /firms/{firm}/accounts"} {
-		if base.Inputs.Specs[target] == "" {
+		if base.Inputs.Mapping.Specs[target] == "" {
 			t.Errorf("no contract recorded for %s", target)
 		}
 	}
@@ -328,15 +334,18 @@ func TestTargetSpecIsPartOfTheContract(t *testing.T) {
 	changed, err := ExecuteRun(eng, store, RunRequest{
 		Number: 1, Project: "fas-demo", Reason: "narrowed contract",
 		Actor: Actor{Kind: "test", ID: "go"}, Firm: "PERSUS",
-		Schemas:   map[string]*SourceSchema{"account_master": schema},
-		Datasets:  map[string]*Dataset{"account_master": ds},
-		Transform: x, WithheldAtIngest: prior, Spec: spec,
+		Mapping: &Mapping{
+			Schemas:   map[SchemaName]*SourceSchema{schema.SchemaName: schema},
+			Transform: x, Spec: spec,
+		},
+		Datasets:         map[string]*Dataset{"account_master": ds},
+		WithheldAtIngest: prior,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if changed.Inputs.Specs["PUT /parties"] == base.Inputs.Specs["PUT /parties"] {
+	if changed.Inputs.Mapping.Specs["PUT /parties"] == base.Inputs.Mapping.Specs["PUT /parties"] {
 		t.Error("a narrowed contract must change that target's recorded version")
 	}
 	if changed.Inputs.Digest == base.Inputs.Digest {
@@ -345,7 +354,7 @@ func TestTargetSpecIsPartOfTheContract(t *testing.T) {
 	}
 	// The other target is untouched, which is why specs are hashed per target
 	// rather than over the whole document.
-	if changed.Inputs.Specs["PUT /firms/{firm}/accounts"] != base.Inputs.Specs["PUT /firms/{firm}/accounts"] {
+	if changed.Inputs.Mapping.Specs["PUT /firms/{firm}/accounts"] != base.Inputs.Mapping.Specs["PUT /firms/{firm}/accounts"] {
 		t.Error("an unrelated endpoint's contract should not have changed")
 	}
 }

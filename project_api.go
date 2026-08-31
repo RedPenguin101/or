@@ -33,8 +33,8 @@ func (a *App) listMigrationTypes(w http.ResponseWriter, r *http.Request) {
 	for _, n := range names {
 		mt := a.Types[n]
 		v := migrationTypeView{Name: mt.Name, Title: mt.Title, Schemas: mt.SchemaNames()}
-		if mt.Transform != nil {
-			v.Transform = mt.Transform.Name
+		if mt.Mapping.Transform != nil {
+			v.Transform = mt.Mapping.Transform.Name
 		}
 		out = append(out, v)
 	}

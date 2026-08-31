@@ -49,11 +49,12 @@ type transformView struct {
 }
 
 func (a *App) getTransform(w http.ResponseWriter, r *http.Request) {
-	x, err := a.DB.GetTransform(r.Context(), r.PathValue("id"))
+	m, err := a.DB.GetMapping(r.Context(), r.PathValue("id"))
 	if err != nil {
 		writeErr(w, http.StatusNotFound, err)
 		return
 	}
+	x := m.Transform
 	inputs := map[string]bool{}
 	for _, in := range x.Inputs {
 		inputs[in.As] = true

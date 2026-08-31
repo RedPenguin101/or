@@ -127,6 +127,33 @@ func (d *DB) ListSchemas(ctx context.Context, projectID string) ([]*SourceSchema
 	return out, rows.Err()
 }
 
+// GetMapping returns the project's mapping as it now stands: its schemas, its
+// transform, and the target contract it writes against.
+//
+// One call because they are one thing. Fetched separately, the three read as
+// unrelated lookups a caller has to remember to make together — which is how the
+// check that a dataset was coerced against the schema the mapping pins ended up
+// belonging to nobody.
+func (d *DB) GetMapping(ctx context.Context, projectID string) (*Mapping, error) {
+	schemas, err := d.ListSchemas(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	x, err := d.GetTransform(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	spec, err := d.GetSpec(ctx, projectID, TargetSystem)
+	if err != nil {
+		return nil, err
+	}
+	m := &Mapping{Schemas: map[SchemaName]*SourceSchema{}, Transform: x, Spec: spec}
+	for _, sc := range schemas {
+		m.Schemas[sc.SchemaName] = sc
+	}
+	return m, nil
+}
+
 // PutTransform records a version of the project's transform. Appends; see
 // PutSchema.
 func (d *DB) PutTransform(ctx context.Context, projectID, actor, reason string, x *Transform) error {

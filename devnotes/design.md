@@ -346,6 +346,51 @@ recomputes the world.
 
 ---
 
+## 4b. Mapping and Data: the four inputs are two kinds of thing `[DECIDED]`
+
+`Output = Run(Mapping, Data)`, where a **Mapping** is the source schemas, the transform and the
+target spec together — a description of a transformation between two data formats — and **Data** is
+the Datasets going through it.
+
+The split is not cosmetic. The two halves differ in every way that matters:
+
+| | Mapping | Data |
+|---|---|---|
+| origin | seeded from a catalogue, then authored | delivered by the client |
+| storage | write-only log, `reason` required | one row per upload, no reason |
+| a new version means | someone made a decision | new data arrived |
+| selection | current = newest per name | newest per schema, chronological |
+
+That asymmetry was already in the schema before it had a name — `reason NOT NULL` on three tables
+and absent on `datasets` — with nothing saying why.
+
+**The name is ETL's.** Informatica's *Mapping* is precisely this object: source definitions, target
+definitions, and the transformation between them, distinct from the Session that runs it against
+data. Data-integration theory uses the same word formally (a *schema mapping* is a source schema, a
+target schema, and the dependencies relating them), and migration teams in this domain already live
+in "the mapping document". "Pipeline" was rejected because it connotes the running of the thing;
+`Mapping` states what it is. The rule that keeps it honest: **a Mapping holds no data and executes
+nothing.**
+
+### The bug this closed
+
+`ExecuteRun` matched a Dataset to a transform input by schema **name**, never by version. So a
+revised schema left old datasets still matching, and a Run paired rows typed under the previous
+version with the version it recorded as its input. Two Runs could then share a digest and produce
+different output — the one invariant the architecture rests on.
+
+`Mapping.Admits` is where that check belongs, and it had nowhere to live while the inputs were four
+flat fields on a request. A boundary condition goes unchecked when the boundary has no name.
+
+### Two digests
+
+`InputVersions` splits the same way, each half carrying its own digest and the Run's identity being
+the hash of both. This answers, in one comparison, the question a migrator asks whenever two runs
+differ: same mapping and different data means the extract changed; same data and different mapping
+means we did. Flat, it took four hashes and knowing which three to group.
+
+---
+
 ## 4a. Seed and version: where the four inputs live `[DECIDED]`
 
 Every input to a Run is stored twice over, in two layers doing two different jobs. Collapsing them

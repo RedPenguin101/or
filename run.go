@@ -53,26 +53,43 @@ type Actor struct {
 	ID   string `json:"id"`
 }
 
-// InputVersions is the recorded identity of everything a Run consumed. Four
-// things, and the Run is a pure function of them:
+// InputVersions is the recorded identity of everything a Run consumed, in two
+// halves, because the four inputs are two kinds of thing:
 //
-//	Schemas   what the source data looks like
-//	Specs     what the target data looks like
-//	Transform     how to map between the two
-//	Datasets  the actual data going through the pipe
+//	Mapping   what the source looks like, what the target looks like, how to map
+//	          between them — authored, revised by decision
+//	Data      the rows going through it — delivered, never edited
 //
-// The Specs were missing until it was noticed that spec validation *withholds*
-// payloads — so a changed target contract changes the output, which makes it an
-// input whether or not it was written down.
+// Split rather than flat because "why do these two runs differ?" is then one
+// comparison instead of four: same mapping and different data means the extract
+// changed; same data and different mapping means we did.
+//
+// The Specs belong to the mapping half and were missing entirely until it was
+// noticed that spec validation *withholds* payloads — a changed target contract
+// changes the output, which makes it an input whether or not it was written down.
 type InputVersions struct {
-	Schemas   map[string]string `json:"schemas"`
-	Specs     map[string]string `json:"specs"`
-	Transform string            `json:"transform"`
-	Datasets  map[string]string `json:"datasets"`
+	Mapping MappingVersions `json:"mapping"`
+	Data    DataVersions    `json:"data"`
 
-	// Digest is the hash of the four above: the Run's identity. Two Runs with
-	// the same digest are guaranteed to have produced the same output.
+	// Digest is the hash of both halves: the Run's identity. Two Runs with the
+	// same digest are guaranteed to have produced the same output.
+	//
+	// A digest nested inside the record it describes necessarily covers the
+	// fields beside it rather than itself. That is unlike a stored body, whose
+	// hash is its key and must cover the whole thing.
 	Digest string `json:"digest"`
+}
+
+type MappingVersions struct {
+	Schemas   map[string]string `json:"schemas"`
+	Transform string            `json:"transform"`
+	Specs     map[string]string `json:"specs"`
+	Digest    string            `json:"digest"`
+}
+
+type DataVersions struct {
+	Datasets map[string]string `json:"datasets"` // input alias -> dataset content hash
+	Digest   string            `json:"digest"`
 }
 
 type NodeStat struct {
@@ -134,19 +151,15 @@ type RunRequest struct {
 	Actor   Actor
 	Firm    string
 
-	Schemas map[string]*SourceSchema // input alias -> schema
+	// Mapping is the three authored inputs together: the source schemas, the
+	// transform, and the target contract it writes against.
+	Mapping *Mapping
 
-	// Datasets is what satisfies each input. DatasetID carries the record id
-	// alongside, so the Run can point back at the ingest without copying what
-	// that ingest already knows.
+	// Datasets is what satisfies each of the transform's declared inputs.
+	// DatasetID carries the record id alongside, so the Run can point back at the
+	// ingest without copying what that ingest already knows.
 	Datasets  map[string]*Dataset // input alias -> dataset
 	DatasetID map[string]string   // input alias -> dataset record id
-	Transform *Transform
-
-	// Spec is Qniform's OpenAPI document: what the target will accept. An input
-	// rather than a dependency, because validating against it *withholds*
-	// payloads — a changed contract changes the output.
-	Spec *Spec
 
 	WithheldAtIngest []Reject // rows that failed coercion, before any rule saw them
 }
@@ -166,6 +179,10 @@ type RunRequest struct {
 func ExecuteRun(eng *Engine, store string, in RunRequest) (*Run, error) {
 	started := time.Now()
 
+	mv, err := in.Mapping.Versions()
+	if err != nil {
+		return nil, err
+	}
 	run := &Run{
 		Number:    in.Number,
 		Project:   in.Project,
@@ -176,52 +193,40 @@ func ExecuteRun(eng *Engine, store string, in RunRequest) (*Run, error) {
 		Nodes:     map[string]NodeStat{},
 		Target:    RunTarget{Kind: "preview", Firm: in.Firm},
 		Inputs: InputVersions{
-			Schemas:   map[string]string{},
-			Specs:     map[string]string{},
-			Datasets:  map[string]string{},
-			Transform: in.Transform.Hash(),
+			Mapping: mv,
+			Data:    DataVersions{Datasets: map[string]string{}},
 		},
 	}
 
 	inputViews := map[string]bool{}
-	for _, inp := range in.Transform.Inputs {
+	for _, inp := range in.Mapping.Transform.Inputs {
 		ds, ok := in.Datasets[inp.As]
 		if !ok {
 			return nil, fmt.Errorf("transform declares input %q, which no dataset satisfies", inp.As)
 		}
-		sc, ok := in.Schemas[inp.As]
-		if !ok {
-			return nil, fmt.Errorf("no schema for input %q", inp.As)
-		}
-		if sc.SchemaName != inp.SchemaName {
+		if ds.SchemaName != inp.SchemaName {
 			return nil, fmt.Errorf("input %q: transform expects schema %s, dataset carries %s",
-				inp.As, inp.SchemaName, sc.SchemaName)
+				inp.As, inp.SchemaName, ds.SchemaName)
+		}
+		// The mapping decides what it will accept, including that the data was
+		// coerced against the schema version the mapping actually pins.
+		if err := in.Mapping.Admits(ds); err != nil {
+			return nil, fmt.Errorf("input %q: %w", inp.As, err)
 		}
 		if err := eng.Attach(inp.As, ds.DataPath(store)); err != nil {
 			return nil, err
 		}
 		inputViews[inp.As] = true
-		run.Inputs.Schemas[sc.String()] = sc.Hash()
-		run.Inputs.Datasets[inp.As] = ds.Hash
+		run.Inputs.Data.Datasets[inp.As] = ds.Hash
 		run.Read[inp.As] = in.DatasetID[inp.As]
 	}
-	// Record the contract of every target this transform writes. Only those:
-	// endpoints it never touches are not inputs to it.
-	if in.Spec != nil {
-		for _, target := range in.Transform.Targets() {
-			h, err := in.Spec.HashFor(target)
-			if err != nil {
-				return nil, fmt.Errorf("recording the contract for %s: %w", target, err)
-			}
-			run.Inputs.Specs[target] = h
-		}
-	}
-	run.Inputs.Digest = hashJSON(run.Inputs)
+	run.Inputs.Data.Digest = hashJSON(run.Inputs.Data.Datasets)
+	run.Inputs.Digest = hashJSON([]string{run.Inputs.Mapping.Digest, run.Inputs.Data.Digest})
 
 	// mintRef applies a rule's prefix to a raw source key. A reference never
 	// restates the mint expression, so the two cannot drift apart.
 	mintOf := map[string]string{}
-	for _, r := range in.Transform.Rules {
+	for _, r := range in.Mapping.Transform.Rules {
 		mintOf[r.Name] = r.Mints.Prefix
 	}
 	mintRef := func(rule, raw string) string { return mintOf[rule] + raw }
@@ -231,25 +236,25 @@ func ExecuteRun(eng *Engine, store string, in RunRequest) (*Run, error) {
 	// single flat set is enough.
 	quarantined := map[string]RejectRef{}
 
-	for _, rule := range in.Transform.Ordered() {
+	for _, rule := range in.Mapping.Transform.Ordered() {
 		table := "rule_" + rule.Name
 
 		t0 := time.Now()
-		n, err := eng.Materialise(table, in.Transform.SQL[rule.Name])
+		n, err := eng.Materialise(table, in.Mapping.Transform.SQL[rule.Name])
 		if err != nil {
 			return nil, err
 		}
 		// A node's hash folds in its inputs, so changing one rule invalidates
 		// only what depends on it rather than the world (design.md §4).
 		run.Nodes[rule.Name] = NodeStat{
-			Hash:   hashJSON([]string{in.Transform.SQL[rule.Name], run.Inputs.Digest}),
+			Hash:   hashJSON([]string{in.Mapping.Transform.SQL[rule.Name], run.Inputs.Digest}),
 			Cached: false, Rows: n, Ms: time.Since(t0).Milliseconds(),
 		}
 
 		res := RuleOutput{Rule: rule.Name, Title: rule.Title, Target: rule.To}
 
-		if in.Spec != nil {
-			if err := checkColumnsAgainstTarget(eng, in.Spec, rule, table); err != nil {
+		if in.Mapping.Spec != nil {
+			if err := checkColumnsAgainstTarget(eng, in.Mapping.Spec, rule, table); err != nil {
 				return nil, err
 			}
 		}
@@ -308,11 +313,11 @@ func ExecuteRun(eng *Engine, store string, in RunRequest) (*Run, error) {
 		// Check the batch against the target's own spec. A payload that fails
 		// here is our rule's fault, not the extract's and not Qniform's.
 		maxItems := 500
-		if in.Spec != nil && len(res.Payloads) > 0 {
-			if doc, err := in.Spec.Describe(rule.To); err == nil && doc.MaxItems > 0 {
+		if in.Mapping.Spec != nil && len(res.Payloads) > 0 {
+			if doc, err := in.Mapping.Spec.Describe(rule.To); err == nil && doc.MaxItems > 0 {
 				maxItems = doc.MaxItems
 			}
-			specRejects, err := in.Spec.ValidateBatch(rule.To, res.Payloads)
+			specRejects, err := in.Mapping.Spec.ValidateBatch(rule.To, res.Payloads)
 			if err != nil {
 				return nil, fmt.Errorf("rule %s: %w", rule.Name, err)
 			}

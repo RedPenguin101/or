@@ -66,6 +66,24 @@ Four inputs — what the source looks like, what the target looks like, how to m
 the data itself — all content-addressed, so a Run's identity is their **digest** and any Run is
 exactly reproducible. `run.go` holds it; read that first.
 
+**The four inputs are two kinds of thing, and `Mapping` (`mapping.go`) names the difference.** A
+Mapping is the schemas, the transform and the target spec together — a description of a
+transformation between two data formats. Those three are *authored*: seeded from a Migration Type's
+catalogue, revised through the application, each revision a decision with a required `reason`. The
+Datasets are *delivered*: rows from the client, never edited, no seed and no reason. That asymmetry
+was already in the tables before it had a name, which is why `reason` is `NOT NULL` on three of them
+and absent on `datasets`.
+
+**A Mapping holds no data and executes nothing** — the Engine and store root stay parameters to
+`ExecuteRun`. Keep it that way; the name will otherwise attract execution concerns.
+
+`Mapping.Admits` is the point of the type: it checks a Dataset was coerced against the schema
+*version* the mapping pins, not merely one of the same name. That check had nowhere to live while
+the inputs were four flat fields, and its absence was a live determinism bug — a revised schema left
+old datasets matching by name, so a Run paired rows typed under v1 with the v2 hash it recorded.
+`InputVersions` is split the same way, with a digest per half: same mapping and different data means
+the extract changed, same data and different mapping means we did.
+
 **The target spec is an input, not a dependency**: spec validation *withholds* payloads, so a
 changed contract changes the output. It is hashed per target (`Spec.HashFor`), because only the
 endpoints a transform writes are inputs to it. Do not move it out of `InputVersions` —
@@ -282,6 +300,7 @@ These were renamed deliberately; do not reintroduce the old words.
 | stage (on a Reject) | **phase** | collided with the emissions, which were also "stages" |
 | Prior | **WithheldAtIngest** | says what it holds |
 | triple | **digest** | there are four inputs, not three |
+| the schemas + transform + spec, passed around loose | **`Mapping`** | ETL's own word for exactly this object (Informatica's Mapping is source definitions, target definitions and the transformation between them), and what migration teams already call their mapping documents. Not "Pipeline" — that connotes running it |
 | `Run.Source` (delivered/rows) | *nothing* — `Run.Read` links to the Dataset | it summed two counts across every dataset, so with more than one input it described nothing, and it re-derived facts the Dataset already owns. A Run records the dataset *id* it read (outside the digest — an id is not content) and the counts are fetched from `datasets`, which is a metadata read, not a body one |
 | a Dataset's file name | *nothing* | the delivered file is transport. A Dataset is identified by its schema and its content hash; a file name labels neither (two deliveries share one, one file is delivered twice) and would put a word in front of users that means nothing to the work |
 | `SourceSchema.Ref()`, `schema_ref`, `ref` | **`SchemaName{SourceSystem, Schema}`** | a schema is named by two things; joining them into `FAS/ACCOUNT-MASTER` only to split them again bought nothing and cost a parser. `String()` / `schemaKey()` remain, for display and DOM keys — never for comparing two schemas |

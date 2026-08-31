@@ -49,7 +49,7 @@ type fieldCov struct {
 
 func (a *App) getTarget(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
-	xform, err := a.DB.GetTransform(r.Context(), projectID)
+	mapping, err := a.DB.GetMapping(r.Context(), projectID)
 	if err != nil {
 		writeErr(w, http.StatusNotFound, err)
 		return
@@ -61,7 +61,7 @@ func (a *App) getTarget(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var rules []Rule
-	for _, rule := range xform.Ordered() {
+	for _, rule := range mapping.Transform.Ordered() {
 		if rule.To == target {
 			rules = append(rules, rule)
 		}
@@ -78,13 +78,7 @@ func (a *App) getTarget(w http.ResponseWriter, r *http.Request) {
 	// is the one its Runs validate against. Without it there is no coverage to
 	// report, only bindings — say so rather than presenting a partial answer as
 	// a complete one.
-	spec, err := a.DB.GetSpec(r.Context(), projectID, TargetSystem)
-	if err != nil {
-		v.DocErr = err.Error()
-		writeJSON(w, http.StatusOK, v)
-		return
-	}
-	doc, err := spec.Describe(target)
+	doc, err := mapping.Spec.Describe(target)
 	if err != nil {
 		v.DocErr = err.Error()
 		writeJSON(w, http.StatusOK, v)

@@ -48,11 +48,16 @@ func main() {
 	if err != nil {
 		log.Fatalf("target spec: %v", err)
 	}
-	app.Spec = spec
+	// The shipped mapping is only complete once the target contract is attached:
+	// what the source looks like, what the target looks like, and how to map
+	// between them are one artefact, not two plus a global.
+	for _, mt := range types {
+		mt.Mapping.Spec = spec
+	}
 	log.Printf("seed target spec %s (%s)", targetSpecPath(), spec.Hash())
 
 	for name, mt := range types {
-		log.Printf("migration type %s: %d schema(s), transform %q", name, len(mt.Schemas), transformName(mt))
+		log.Printf("migration type %s: %d schema(s), transform %q", name, len(mt.Mapping.Schemas), transformName(mt))
 	}
 
 	addr := envOr("ONRAMP_ADDR", ":8090")
@@ -63,10 +68,10 @@ func main() {
 }
 
 func transformName(mt *MigrationType) string {
-	if mt.Transform == nil {
+	if mt.Mapping == nil || mt.Mapping.Transform == nil {
 		return "(none)"
 	}
-	return mt.Transform.Name
+	return mt.Mapping.Transform.Name
 }
 
 func envOr(k, def string) string {

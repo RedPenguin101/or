@@ -33,42 +33,54 @@ export default function RunView() {
 
       <Panel
         title="Inputs"
-        aside="Output = Run(Schemas, Specs, Xform, Datasets)"
+        aside="Output = Run(Mapping, Data) — the mapping is authored, the data is delivered"
       >
         <div className="flex flex-wrap items-start gap-8 text-xs">
           <div>
-            <div className="mb-1 text-ink-soft">Schemas</div>
-            {Object.entries(r.inputs.schemas).map(([k, v]) => (
+            <div className="mb-1 text-ink-soft">Mapping &middot; schemas</div>
+            {Object.entries(r.inputs.mapping.schemas).map(([k, v]) => (
               <div key={k} className="mono flex items-center gap-2">
                 {k} <Hash value={v} />
               </div>
             ))}
           </div>
           <div>
-            <div className="mb-1 text-ink-soft">Datasets</div>
-            {Object.entries(r.inputs.datasets).map(([k, v]) => (
+            <div className="mb-1 text-ink-soft">Mapping &middot; transform</div>
+            <Hash value={r.inputs.mapping.transform} />
+          </div>
+          <div>
+            <div className="mb-1 text-ink-soft">Mapping &middot; target contracts</div>
+            {Object.entries(r.inputs.mapping.specs).map(([k, v]) => (
               <div key={k} className="mono flex items-center gap-2">
                 {k} <Hash value={v} />
               </div>
             ))}
           </div>
           <div>
-            <div className="mb-1 text-ink-soft">Target contracts</div>
-            {Object.entries(r.inputs.specs).map(([k, v]) => (
+            <div className="mb-1 text-ink-soft">Data &middot; datasets</div>
+            {Object.entries(r.inputs.data.datasets).map(([k, v]) => (
               <div key={k} className="mono flex items-center gap-2">
                 {k} <Hash value={v} />
               </div>
             ))}
           </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-start gap-8 border-t border-line pt-3 text-xs">
           <div>
-            <div className="mb-1 text-ink-soft">Xform</div>
-            <Hash value={r.inputs.transform} />
+            <div className="mb-1 text-ink-soft">Mapping</div>
+            <Hash value={r.inputs.mapping.digest} />
+          </div>
+          <div>
+            <div className="mb-1 text-ink-soft">Data</div>
+            <Hash value={r.inputs.data.digest} />
           </div>
           <div>
             <div className="mb-1 text-ink-soft">Run identity</div>
             <Hash value={r.inputs.digest} />
-            <div className="mt-1 max-w-xs text-ink-soft/80">
-              Any run with this digest produced exactly this output.
+            <div className="mt-1 max-w-md text-ink-soft/80">
+              Any run with this digest produced exactly this output. Compare the two above to see
+              which half moved: same mapping means the extract changed, same data means we did.
             </div>
           </div>
         </div>

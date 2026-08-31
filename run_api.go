@@ -47,26 +47,14 @@ func (a *App) createRun(w http.ResponseWriter, r *http.Request) {
 		req.Actor = "unknown"
 	}
 
-	// The transform and the target contract come from what this project is
-	// pinned to, not from the shipped catalogue. A Run is only reproducible if
-	// its inputs are the recorded ones.
-	xform, err := a.DB.GetTransform(r.Context(), projectID)
+	// The mapping is the project's own, not the shipped catalogue's. A Run is
+	// only reproducible if its inputs are the recorded ones.
+	mapping, err := a.DB.GetMapping(r.Context(), projectID)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
-	spec, err := a.DB.GetSpec(r.Context(), projectID, TargetSystem)
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, err)
-		return
-	}
-
 	datasets, err := a.DB.ListDatasets(r.Context(), projectID)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err)
-		return
-	}
-	schemas, err := a.DB.ListSchemas(r.Context(), projectID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
@@ -77,18 +65,11 @@ func (a *App) createRun(w http.ResponseWriter, r *http.Request) {
 		Project: p.Name, Reason: req.Reason,
 		Actor:     Actor{Kind: "user", ID: req.Actor},
 		Firm:      p.Firm,
-		Schemas:   map[string]*SourceSchema{},
+		Mapping:   mapping,
 		Datasets:  map[string]*Dataset{},
 		DatasetID: map[string]string{},
-		Transform: xform,
-		Spec:      spec,
 	}
-	for _, inp := range xform.Inputs {
-		for _, s := range schemas {
-			if s.SchemaName == inp.SchemaName {
-				in.Schemas[inp.As] = s
-			}
-		}
+	for _, inp := range mapping.Transform.Inputs {
 		for i := range datasets { // ListDatasets is newest first
 			if datasets[i].SchemaName == inp.SchemaName {
 				d := datasets[i].Dataset
