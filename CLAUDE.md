@@ -282,6 +282,7 @@ These were renamed deliberately; do not reintroduce the old words.
 | stage (on a Reject) | **phase** | collided with the emissions, which were also "stages" |
 | Prior | **WithheldAtIngest** | says what it holds |
 | triple | **digest** | there are four inputs, not three |
+| `Run.Source` (delivered/rows) | *nothing* — `Run.Read` links to the Dataset | it summed two counts across every dataset, so with more than one input it described nothing, and it re-derived facts the Dataset already owns. A Run records the dataset *id* it read (outside the digest — an id is not content) and the counts are fetched from `datasets`, which is a metadata read, not a body one |
 | a Dataset's file name | *nothing* | the delivered file is transport. A Dataset is identified by its schema and its content hash; a file name labels neither (two deliveries share one, one file is delivered twice) and would put a word in front of users that means nothing to the work |
 | `SourceSchema.Ref()`, `schema_ref`, `ref` | **`SchemaName{SourceSystem, Schema}`** | a schema is named by two things; joining them into `FAS/ACCOUNT-MASTER` only to split them again bought nothing and cost a parser. `String()` / `schemaKey()` remain, for display and DOM keys — never for comparing two schemas |
 | record_version | *nothing* | premature: no run predates this week, and versioning six shapes protected only throwaway data |

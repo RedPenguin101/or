@@ -215,16 +215,16 @@ func (d *DB) PutDataset(ctx context.Context, r DatasetRow) error {
 		return err
 	}
 	_, err = d.pool.Exec(ctx,
-		`INSERT INTO datasets (id, project_id, source_system, schema_name, hash, rows, rejected, rejects, created_by)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-		r.ID, r.ProjectID, r.SourceSystem, r.Schema, r.Hash,
+		`INSERT INTO datasets (id, project_id, source_system, schema_name, hash, schema_hash, rows, rejected, rejects, created_by)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+		r.ID, r.ProjectID, r.SourceSystem, r.Schema, r.Hash, r.SchemaHash,
 		r.Rows, r.Rejected, rj, r.CreatedBy)
 	return err
 }
 
 func (d *DB) ListDatasets(ctx context.Context, projectID string) ([]DatasetRow, error) {
 	rows, err := d.pool.Query(ctx,
-		`SELECT id, project_id, source_system, schema_name, hash, rows, rejected, rejects, created_at::text, created_by
+		`SELECT id, project_id, source_system, schema_name, hash, schema_hash, rows, rejected, rejects, created_at::text, created_by
 		   FROM datasets WHERE project_id = $1 ORDER BY created_at DESC`, projectID)
 	if err != nil {
 		return nil, err
@@ -234,7 +234,7 @@ func (d *DB) ListDatasets(ctx context.Context, projectID string) ([]DatasetRow, 
 	for rows.Next() {
 		var r DatasetRow
 		var rj []byte
-		if err := rows.Scan(&r.ID, &r.ProjectID, &r.SourceSystem, &r.Schema, &r.Hash,
+		if err := rows.Scan(&r.ID, &r.ProjectID, &r.SourceSystem, &r.Schema, &r.Hash, &r.SchemaHash,
 			&r.Rows, &r.Rejected, &rj, &r.CreatedAt, &r.CreatedBy); err != nil {
 			return nil, err
 		}

@@ -1,32 +1,56 @@
-import type { Run } from "../api";
+import type { Dataset, Run } from "../api";
 
 // Flow makes the fan-out legible: one flat source file becoming several
 // emissions, with what fell out at each step. This is the insight the product
 // exists to deliver, so it gets shown before any payload detail.
-export default function Flow({ run }: { run: Run }) {
-  const withheldAtIngest = run.withheld_at_ingest.length;
-  const { outputs, source } = run;
+//
+// The row counts come from the Datasets themselves, looked up by the ids the Run
+// records. They are not copied onto the Run: a Dataset owns how many of its rows
+// coerced and how many did not, and one place should say so.
+export default function Flow({ run, datasets }: { run: Run; datasets: Dataset[] }) {
+  const { outputs } = run;
+  const byID = new Map(datasets.map((d) => [d.id, d]));
+
+  // One pair of nodes per input, not a sum across them: with an account file and
+  // a transaction file, a combined "rows delivered" is a number about nothing.
+  const inputs = Object.entries(run.read).map(([alias, id]) => ({
+    alias,
+    d: byID.get(id),
+  }));
 
   return (
     <div className="overflow-x-auto">
       <div className="flex min-w-max items-stretch gap-2">
-        <Node
-          label="File"
-          value={source.delivered}
-          unit="rows delivered"
-          sub="CSV, as it arrived"
-          tone={withheldAtIngest ? "warn" : "good"}
-        />
-        <Arrow />
-        <Node
-          label="Dataset"
-          value={source.rows}
-          unit="rows"
-          sub={withheldAtIngest ? `${withheldAtIngest} could not be read` : "every row read cleanly"}
-          tone={withheldAtIngest ? "warn" : "good"}
-          withheld={withheldAtIngest}
-        />
-        <Arrow />
+        {inputs.map(({ alias, d }) => (
+          <div key={alias} className="flex items-stretch gap-2">
+            {d ? (
+              <>
+                <Node
+                  label="Delivered"
+                  value={d.rows + d.rejected}
+                  unit="rows"
+                  sub={`${d.source_system}/${d.schema}`}
+                  tone={d.rejected ? "warn" : "good"}
+                />
+                <Arrow />
+                <Node
+                  label="Dataset"
+                  value={d.rows}
+                  unit="rows"
+                  sub={d.rejected ? `${d.rejected} could not be read` : "every row read cleanly"}
+                  tone={d.rejected ? "warn" : "good"}
+                  withheld={d.rejected}
+                />
+              </>
+            ) : (
+              // The Dataset this Run read is no longer here. Say so rather than
+              // inferring a count from an output — derivation means no output's
+              // row count stands for the source's.
+              <Node label="Dataset" value={0} unit={alias} sub="no longer available" tone="warn" />
+            )}
+            <Arrow />
+          </div>
+        ))}
 
         {outputs.map((s, i) => (
           <div key={s.rule} className="flex items-stretch gap-2">

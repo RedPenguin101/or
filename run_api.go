@@ -79,6 +79,7 @@ func (a *App) createRun(w http.ResponseWriter, r *http.Request) {
 		Firm:      p.Firm,
 		Schemas:   map[string]*SourceSchema{},
 		Datasets:  map[string]*Dataset{},
+		DatasetID: map[string]string{},
 		Transform: xform,
 		Spec:      spec,
 	}
@@ -92,6 +93,7 @@ func (a *App) createRun(w http.ResponseWriter, r *http.Request) {
 			if datasets[i].SchemaName == inp.SchemaName {
 				d := datasets[i].Dataset
 				in.Datasets[inp.As] = &d
+				in.DatasetID[inp.As] = datasets[i].ID
 				in.WithheldAtIngest = append(in.WithheldAtIngest, datasets[i].Rejects...)
 				break
 			}

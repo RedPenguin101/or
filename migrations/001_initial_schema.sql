@@ -100,6 +100,11 @@ CREATE TABLE IF NOT EXISTS datasets (
     -- stored: a stored path cannot be re-derived once it is wrong, and renaming
     -- the Parquet file left every row here pointing at a name that had gone.
     hash          TEXT        NOT NULL,
+    -- The schema version these bytes were coerced against. Recorded because rows
+    -- and rejected are a function of it: change a null sentinel and the same
+    -- file yields a different Dataset. Without it an ingest's result cannot be
+    -- explained from its own record.
+    schema_hash   TEXT        NOT NULL,
     rows          INTEGER     NOT NULL,
     rejected      INTEGER     NOT NULL,
     rejects       JSONB       NOT NULL DEFAULT '[]',

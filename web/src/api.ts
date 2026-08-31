@@ -63,6 +63,7 @@ export type Reject = {
 export type Dataset = SchemaName & {
   id: string;
   hash: string;
+  schema_hash: string;
   rows: number;
   rejected: number;
   rejects: Reject[];
@@ -90,7 +91,8 @@ export type Run = {
   actor: { kind: string; id: string };
   started_at: string;
   finished_at: string;
-  source: { delivered: number; rows: number };
+  // Dataset record id per input alias — the link back to the ingest.
+  read: Record<string, string>;
   // Four things a Run is a function of: what the source looks like, what the
   // target looks like, how to map between them, and the data itself.
   inputs: {

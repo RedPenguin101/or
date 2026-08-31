@@ -7,8 +7,11 @@ import Flow from "../components/Flow";
 import Rejects from "../components/Rejects";
 
 export default function RunView() {
-  const { rid = "" } = useParams();
+  const { id = "", rid = "" } = useParams();
   const run = useQuery({ queryKey: ["run", rid], queryFn: () => api.run(rid) });
+  // Row counts belong to the Datasets, so the flow reads them from there rather
+  // than from a copy on the Run. A metadata fetch, not a body one.
+  const datasets = useQuery({ queryKey: ["p", id, "ds"], queryFn: () => api.datasets(id) });
 
   if (run.error) return <ErrorNote error={run.error} />;
   if (!run.data) return null;
@@ -81,7 +84,7 @@ export default function RunView() {
             tone={r.totals.rejected ? "warn" : undefined}
           />
         </div>
-        <Flow run={r} />
+        <Flow run={r} datasets={datasets.data ?? []} />
       </Panel>
 
       {r.withheld_at_ingest.length > 0 && (

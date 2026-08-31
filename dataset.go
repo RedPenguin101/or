@@ -22,9 +22,16 @@ import (
 // share a name, and one file can be delivered twice.
 type Dataset struct {
 	SchemaName
-	Hash     string `json:"hash"`     // content hash of the raw bytes: the Dataset's version
-	Rows     int    `json:"rows"`     // rows that coerced cleanly and landed
-	Rejected int    `json:"rejected"` // rows withheld at coercion
+	Hash string `json:"hash"` // content hash of the raw bytes: the Dataset's version
+
+	// SchemaHash is the version of the schema these bytes were coerced against.
+	// Rows and Rejected are a function of it, so without it neither number can
+	// be explained — the same file against a revised null sentinel is a
+	// different Dataset.
+	SchemaHash string `json:"schema_hash"`
+
+	Rows     int `json:"rows"`     // rows that coerced cleanly and landed
+	Rejected int `json:"rejected"` // rows withheld at coercion
 }
 
 // Where a Dataset's files live. One directory per content hash, written once and
@@ -153,6 +160,7 @@ func Ingest(eng *Engine, store string, schema *SourceSchema, raw []byte) (*Datas
 	return &Dataset{
 		SchemaName: schema.SchemaName,
 		Hash:       hash,
+		SchemaHash: schema.Hash(),
 		Rows:       len(typed),
 		Rejected:   len(rejects),
 	}, rejects, nil

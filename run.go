@@ -24,8 +24,19 @@ type Run struct {
 	// *why* a change was made, and a field that can be skipped will be.
 	Reason string `json:"reason"`
 
-	Inputs  InputVersions       `json:"inputs"`
-	Source  Source              `json:"source"`
+	Inputs InputVersions `json:"inputs"`
+
+	// Read names the dataset record each input was satisfied by, keyed by the
+	// transform's input alias.
+	//
+	// Not part of InputVersions and deliberately outside the digest: an id is not
+	// content, so two identical uploads have different ones, and folding an id in
+	// would mean the same four inputs no longer produced the same digest. It is a
+	// durable link, not a version — how many rows the ingest coerced and how many
+	// it withheld belong to the Dataset, and are read from it rather than copied
+	// here where they could only go stale or disagree.
+	Read map[string]string `json:"read"`
+
 	Nodes   map[string]NodeStat `json:"nodes"`
 	Target  RunTarget           `json:"target"`
 	Outputs []RuleOutput        `json:"outputs"`
@@ -62,19 +73,6 @@ type InputVersions struct {
 	// Digest is the hash of the four above: the Run's identity. Two Runs with
 	// the same digest are guaranteed to have produced the same output.
 	Digest string `json:"digest"`
-}
-
-// Source is how much data the Run actually read. It is recorded rather than
-// inferred from an Output's counts: derivation means no Output's row count
-// stands for the source's, and a fan-out of 20 rows into 22 parties is exactly
-// the case where guessing goes wrong.
-type Source struct {
-	// Delivered is how many rows arrived in the file. Rows is how many are in
-	// the Dataset — the CSV is only transport, and the coerced, typed table on
-	// the far side of ingest IS the Dataset. They differ by whatever could not
-	// be read.
-	Delivered int `json:"delivered"`
-	Rows      int `json:"rows"`
 }
 
 type NodeStat struct {
@@ -136,8 +134,13 @@ type RunRequest struct {
 	Actor   Actor
 	Firm    string
 
-	Schemas   map[string]*SourceSchema // input alias -> schema
-	Datasets  map[string]*Dataset      // input alias -> dataset
+	Schemas map[string]*SourceSchema // input alias -> schema
+
+	// Datasets is what satisfies each input. DatasetID carries the record id
+	// alongside, so the Run can point back at the ingest without copying what
+	// that ingest already knows.
+	Datasets  map[string]*Dataset // input alias -> dataset
+	DatasetID map[string]string   // input alias -> dataset record id
 	Transform *Transform
 
 	// Spec is Qniform's OpenAPI document: what the target will accept. An input
@@ -169,6 +172,7 @@ func ExecuteRun(eng *Engine, store string, in RunRequest) (*Run, error) {
 		StartedAt: started,
 		Actor:     in.Actor,
 		Reason:    in.Reason,
+		Read:      map[string]string{},
 		Nodes:     map[string]NodeStat{},
 		Target:    RunTarget{Kind: "preview", Firm: in.Firm},
 		Inputs: InputVersions{
@@ -199,8 +203,7 @@ func ExecuteRun(eng *Engine, store string, in RunRequest) (*Run, error) {
 		inputViews[inp.As] = true
 		run.Inputs.Schemas[sc.String()] = sc.Hash()
 		run.Inputs.Datasets[inp.As] = ds.Hash
-		run.Source.Rows += ds.Rows
-		run.Source.Delivered += ds.Rows + ds.Rejected
+		run.Read[inp.As] = in.DatasetID[inp.As]
 	}
 	// Record the contract of every target this transform writes. Only those:
 	// endpoints it never touches are not inputs to it.
