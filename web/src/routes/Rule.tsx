@@ -2,6 +2,7 @@ import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, schemaKey, schemaPath } from "../api";
 import { ErrorNote, Panel, Pill } from "../components/ui";
+import Sql from "../components/Sql";
 
 // One rule, in full. A rule now carries its whole chain — the source it reads,
 // the identity it mints, the SQL that flattens it, and the shape of the payload
@@ -131,9 +132,7 @@ export default function RuleView() {
           become, and a NULL means the field is left out — so nothing downstream renames,
           reinterprets, or conditionally drops what this produces.
         </p>
-        <pre className="mono overflow-x-auto rounded-md border border-line bg-surface p-3 text-[11px] leading-relaxed">
-          {transform.data.sql[r.name]}
-        </pre>
+        <Sql src={transform.data.sql[r.name]} />
         {transform.data.sql_reads[r.name]?.length ? (
           <div className="mono mt-1 text-[11px] text-ink-soft">
             reads {transform.data.sql_reads[r.name].join(", ")}

@@ -14,10 +14,23 @@
   --color-warn-soft: oklch(0.96 0.05 65);
   --color-bad: oklch(0.57 0.19 25);
   --color-bad-soft: oklch(0.96 0.04 25);
+
+  /* Syntax colours for the SQL a rule is made of. Their own hues rather than
+     the status colours: good/warn/bad mean something in this app, and a green
+     string literal that reads as "passing" would be noise. */
+  --color-syn-comment: oklch(0.55 0.03 260);
+  --color-syn-keyword: oklch(0.52 0.14 300);
+  --color-syn-string: oklch(0.48 0.11 150);
+  --color-syn-ident: oklch(0.50 0.11 55);
 }
 
+/* Plain :root, not @theme. Tailwind v4 hoists @theme to :root wherever it is
+   written, so an @theme nested in a media query is emitted unconditionally and
+   simply wins — which is how this file rendered dark for everyone, whatever
+   their preference. Overriding the variables the theme generated is the way to
+   make the query actually apply. */
 @media (prefers-color-scheme: dark) {
-  @theme {
+  :root {
     --color-ink: oklch(0.94 0.01 260);
     --color-ink-soft: oklch(0.68 0.02 260);
     --color-line: oklch(0.32 0.02 260);
@@ -31,6 +44,11 @@
     --color-warn-soft: oklch(0.30 0.06 65);
     --color-bad: oklch(0.70 0.17 25);
     --color-bad-soft: oklch(0.30 0.07 25);
+
+    --color-syn-comment: oklch(0.62 0.03 260);
+    --color-syn-keyword: oklch(0.76 0.12 300);
+    --color-syn-string: oklch(0.74 0.12 150);
+    --color-syn-ident: oklch(0.78 0.11 55);
   }
 }
 
