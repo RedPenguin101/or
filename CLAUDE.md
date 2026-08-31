@@ -199,6 +199,11 @@ Rejects carry three orthogonal axes (`reject.go`): `class` (row vs set-level `co
 (`coercion` / `validation` / `target` — the extract's fault, ours, or Qniform's), and `cause`
 (linking a withheld row to the upstream reject that caused it).
 
+**Coercion rejects belong to the Dataset, not the Run.** They happened at ingest, before any rule
+existed to be answerable for them, and a Run reaches them through `Read`. `Run.Totals` therefore
+counts only what the rules did — folding ingest failures in made `emitted` describe rows that were
+never emitted.
+
 **Transport is split from domain by file**, following qniform6: every file with an HTTP surface
 has an `_api.go` sibling, and `api.go` is only the route index.
 
@@ -298,7 +303,7 @@ These were renamed deliberately; do not reintroduce the old words.
 | Stage, staging | **Dataset** / `DataPath` | the coerced table *is* the Dataset; the CSV was transport |
 | Output (declared) | **target endpoint** | no OnRamp object between a rule and Qniform |
 | stage (on a Reject) | **phase** | collided with the emissions, which were also "stages" |
-| Prior | **WithheldAtIngest** | says what it holds |
+| Prior, then `Run.WithheldAtIngest` | **`Dataset.Rejects`** | it was renamed for clarity while it was a thing on the Run, then turned out to be a copy of the Dataset's own rejects — the whole array, in the run body, for every run that read that dataset. The Run links to the ingest via `Read`; the rows belong to the Dataset that suffered them |
 | triple | **digest** | there are four inputs, not three |
 | the schemas + transform + spec, passed around loose | **`Mapping`** | ETL's own word for exactly this object (Informatica's Mapping is source definitions, target definitions and the transformation between them), and what migration teams already call their mapping documents. Not "Pipeline" — that connotes running it |
 | `Run.Source` (delivered/rows) | *nothing* — `Run.Read` links to the Dataset | it summed two counts across every dataset, so with more than one input it described nothing, and it re-derived facts the Dataset already owns. A Run records the dataset *id* it read (outside the digest — an id is not content) and the counts are fetched from `datasets`, which is a metadata read, not a body one |

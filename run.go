@@ -41,11 +41,6 @@ type Run struct {
 	Target  RunTarget           `json:"target"`
 	Outputs []RuleOutput        `json:"outputs"`
 	Totals  Totals              `json:"totals"`
-
-	// WithheldAtIngest belongs to the Run rather than to any rule: these rows
-	// failed coercion before a rule ever saw them, so no rule is answerable for
-	// them.
-	WithheldAtIngest []Reject `json:"withheld_at_ingest"`
 }
 
 type Actor struct {
@@ -119,6 +114,13 @@ type RuleOutput struct {
 	Rejects  []Reject      `json:"rejects"`
 }
 
+// Totals is what the *rules* did: what they emitted, what the target accepted,
+// what was withheld on the way.
+//
+// Rows that failed coercion are not counted here. They never reached a rule, so
+// no rule is answerable for them, and folding them in made "emitted" describe
+// rows that were never emitted. They belong to the ingest and are read from the
+// Dataset, which is where they happened.
 type Totals struct {
 	Emitted  int `json:"emitted"`
 	Accepted int `json:"accepted"`
@@ -161,7 +163,6 @@ type RunRequest struct {
 	Datasets  map[string]*Dataset // input alias -> dataset
 	DatasetID map[string]string   // input alias -> dataset record id
 
-	WithheldAtIngest []Reject // rows that failed coercion, before any rule saw them
 }
 
 // ExecuteRun is the pure function the whole system is built around:
@@ -352,15 +353,6 @@ func ExecuteRun(eng *Engine, store string, in RunRequest) (*Run, error) {
 		run.Totals.Accepted += res.Accepted
 		run.Totals.Rejected += res.Rejected
 	}
-
-	// Coercion rejects belong to the Run, not to any rule: these rows failed
-	// before a rule saw them, so no rule is answerable for them.
-	run.WithheldAtIngest = in.WithheldAtIngest
-	if run.WithheldAtIngest == nil {
-		run.WithheldAtIngest = []Reject{}
-	}
-	run.Totals.Emitted += len(in.WithheldAtIngest)
-	run.Totals.Rejected += len(in.WithheldAtIngest)
 
 	run.FinishedAt = time.Now()
 	return run, nil

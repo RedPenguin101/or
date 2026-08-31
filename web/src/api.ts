@@ -113,7 +113,6 @@ export type Run = {
   };
   nodes: Record<string, { hash: string; cached: boolean; rows_out: number; ms: number }>;
   outputs: Output[];
-  withheld_at_ingest: Reject[];
   totals: { emitted: number; accepted: number; rejected: number };
 };
 

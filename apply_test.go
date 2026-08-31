@@ -23,7 +23,7 @@ func runFAS(t *testing.T) *Run {
 	}
 	eng := testEngine(t)
 	store := t.TempDir()
-	ds, prior, err := Ingest(eng, store, schema, raw)
+	ds, _, err := Ingest(eng, store, schema, raw)
 	if err != nil {
 		t.Fatalf("ingest: %v", err)
 	}
@@ -34,8 +34,7 @@ func runFAS(t *testing.T) *Run {
 			Schemas:   map[SchemaName]*SourceSchema{schema.SchemaName: schema},
 			Transform: x, Spec: mustSpec(t),
 		},
-		Datasets:         map[string]*Dataset{"account_master": ds},
-		WithheldAtIngest: prior,
+		Datasets: map[string]*Dataset{"account_master": ds},
 	})
 	if err != nil {
 		t.Fatalf("apply: %v", err)
@@ -80,11 +79,6 @@ func TestApplyFanOutAndCascade(t *testing.T) {
 	if strings.Join(order, ",") != "customers,reps,accounts" {
 		t.Errorf("rule order = %v; accounts must run after both party rules", order)
 	}
-	// Coercion failures belong to the Run, not to an output: no rule saw them.
-	if len(run.WithheldAtIngest) != 1 {
-		t.Errorf("withheld at ingest = %d, want 1 (the month-13 date)", len(run.WithheldAtIngest))
-	}
-
 	// Two reps have inconsistent spellings across the file. Neither is a bad row;
 	// the sets disagree, so both are quarantined and the rest still emit.
 	p := output(run, "reps")
@@ -274,7 +268,7 @@ func TestRuleColumnsMustBeTargetFields(t *testing.T) {
 	}
 	eng := testEngine(t)
 	store := t.TempDir()
-	ds, prior, err := Ingest(eng, store, schema, raw)
+	ds, _, err := Ingest(eng, store, schema, raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,8 +279,7 @@ func TestRuleColumnsMustBeTargetFields(t *testing.T) {
 			Schemas:   map[SchemaName]*SourceSchema{schema.SchemaName: schema},
 			Transform: x, Spec: mustSpec(t),
 		},
-		Datasets:         map[string]*Dataset{"account_master": ds},
-		WithheldAtIngest: prior,
+		Datasets: map[string]*Dataset{"account_master": ds},
 	})
 	if err == nil {
 		t.Fatal("a column that means nothing to the target must fail the run")
@@ -327,7 +320,7 @@ func TestTargetSpecIsPartOfTheContract(t *testing.T) {
 	raw, _ := os.ReadFile("testdata/fas_account_master.csv")
 	eng := testEngine(t)
 	store := t.TempDir()
-	ds, prior, err := Ingest(eng, store, schema, raw)
+	ds, _, err := Ingest(eng, store, schema, raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -338,8 +331,7 @@ func TestTargetSpecIsPartOfTheContract(t *testing.T) {
 			Schemas:   map[SchemaName]*SourceSchema{schema.SchemaName: schema},
 			Transform: x, Spec: spec,
 		},
-		Datasets:         map[string]*Dataset{"account_master": ds},
-		WithheldAtIngest: prior,
+		Datasets: map[string]*Dataset{"account_master": ds},
 	})
 	if err != nil {
 		t.Fatal(err)

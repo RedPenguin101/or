@@ -17,6 +17,8 @@ export default function RunView() {
   if (!run.data) return null;
   const r = run.data;
   const status = r.totals.rejected === 0 ? "clean" : r.totals.accepted === 0 ? "blocked" : "partial";
+  const byID = new Map((datasets.data ?? []).map((d) => [d.id, d]));
+  const read = Object.entries(r.read).map(([alias, id]) => ({ alias, d: byID.get(id) }));
 
   return (
     <div className="space-y-5">
@@ -99,13 +101,19 @@ export default function RunView() {
         <Flow run={r} datasets={datasets.data ?? []} />
       </Panel>
 
-      {r.withheld_at_ingest.length > 0 && (
-        <Panel
-          title="Withheld at ingest"
-          aside="the file could not be read here, so no rule ever saw these rows"
-        >
-          <Rejects rejects={r.withheld_at_ingest} />
-        </Panel>
+      {/* Coercion failures belong to the Dataset that suffered them, not to the
+          Run — the Run reads them from the datasets it links to rather than
+          holding a copy, and the totals above count only what the rules did. */}
+      {read.map(({ alias, d }) =>
+        d && d.rejects.length > 0 ? (
+          <Panel
+            key={alias}
+            title={`Withheld at ingest · ${d.source_system}/${d.schema}`}
+            aside="the file could not be read here, so no rule ever saw these rows"
+          >
+            <Rejects rejects={d.rejects} />
+          </Panel>
+        ) : null,
       )}
 
       {r.outputs.map((o) => (

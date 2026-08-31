@@ -75,7 +75,6 @@ func (a *App) createRun(w http.ResponseWriter, r *http.Request) {
 				d := datasets[i].Dataset
 				in.Datasets[inp.As] = &d
 				in.DatasetID[inp.As] = datasets[i].ID
-				in.WithheldAtIngest = append(in.WithheldAtIngest, datasets[i].Rejects...)
 				break
 			}
 		}
