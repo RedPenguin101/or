@@ -311,6 +311,20 @@ func (x *Transform) Ordered() []Rule {
 	return out
 }
 
+// MintRef applies a rule's prefix to a raw source key. A reference never
+// restates the mint expression, so the two cannot drift apart.
+//
+// A function rather than a map so a caller cannot reach past it: every place a
+// reference is turned into an identity — the emitter, the quarantine cascade,
+// the payload a rule's page shows — goes through this one.
+func (x *Transform) MintRef() func(rule, raw string) string {
+	mintOf := make(map[string]string, len(x.Rules))
+	for _, r := range x.Rules {
+		mintOf[r.Name] = r.Mints.Prefix
+	}
+	return func(rule, raw string) string { return mintOf[rule] + raw }
+}
+
 // Hash is the Transform's version: the manifest and every rule's SQL together.
 // Changing one rule changes the transform, which is what keeps a Run's recorded
 // input versions honest.

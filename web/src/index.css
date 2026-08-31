@@ -1,13 +1,20 @@
 @import "tailwindcss";
 
 @theme {
-  --color-ink: oklch(0.22 0.02 260);
-  --color-ink-soft: oklch(0.48 0.02 260);
-  --color-line: oklch(0.90 0.01 260);
-  --color-surface: oklch(0.99 0.002 260);
+  /* Soviet control-panel palette, taken from Qniform: instrument panels were
+     painted muted seafoam/turquoise to reduce eye strain and afterimages over
+     long shifts. Light, desaturated seafoam carries the chrome — navbar, panel
+     headers, table headers — and everything else stays near-neutral. The two
+     apps are looked at side by side all day; they should read as one system. */
+  --color-ink: oklch(0.22 0.012 200);
+  --color-ink-soft: oklch(0.48 0.014 200);
+  --color-line: oklch(0.89 0.012 190);
+  --color-surface: oklch(0.985 0.004 190);
   --color-raised: oklch(1 0 0);
-  --color-accent: oklch(0.55 0.16 255);
-  --color-accent-soft: oklch(0.95 0.03 255);
+  --color-chrome: oklch(0.8 0.055 185); /* navbar */
+  --color-chrome-soft: oklch(0.92 0.028 185); /* panel headers, table headers */
+  --color-accent: oklch(0.5 0.07 185); /* links, buttons, focus on white */
+  --color-accent-soft: oklch(0.92 0.028 185); /* panel-header wash, pills */
   --color-good: oklch(0.58 0.13 155);
   --color-good-soft: oklch(0.95 0.04 155);
   --color-warn: oklch(0.65 0.15 65);
@@ -21,7 +28,7 @@
   --color-syn-comment: oklch(0.55 0.03 260);
   --color-syn-keyword: oklch(0.52 0.14 300);
   --color-syn-string: oklch(0.48 0.11 150);
-  --color-syn-ident: oklch(0.50 0.11 55);
+  --color-syn-ident: oklch(0.5 0.11 55);
 }
 
 /* Plain :root, not @theme. Tailwind v4 hoists @theme to :root wherever it is
@@ -36,14 +43,18 @@
     --color-line: oklch(0.32 0.02 260);
     --color-surface: oklch(0.18 0.02 260);
     --color-raised: oklch(0.22 0.02 260);
+    /* Dark keeps its own character; the chrome is only a hint of the same
+       hue, enough that the two themes are recognisably the same app. */
+    --color-chrome: oklch(0.26 0.02 190);
+    --color-chrome-soft: oklch(0.25 0.012 190);
     --color-accent: oklch(0.72 0.14 255);
-    --color-accent-soft: oklch(0.30 0.06 255);
+    --color-accent-soft: oklch(0.3 0.06 255);
     --color-good: oklch(0.72 0.14 155);
     --color-good-soft: oklch(0.28 0.05 155);
     --color-warn: oklch(0.78 0.14 65);
-    --color-warn-soft: oklch(0.30 0.06 65);
-    --color-bad: oklch(0.70 0.17 25);
-    --color-bad-soft: oklch(0.30 0.07 25);
+    --color-warn-soft: oklch(0.3 0.06 65);
+    --color-bad: oklch(0.7 0.17 25);
+    --color-bad-soft: oklch(0.3 0.07 25);
 
     --color-syn-comment: oklch(0.62 0.03 260);
     --color-syn-keyword: oklch(0.76 0.12 300);
@@ -55,7 +66,14 @@
 body {
   background: var(--color-surface);
   color: var(--color-ink);
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
 }
 
-.mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+.mono {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}

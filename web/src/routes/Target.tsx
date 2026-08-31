@@ -65,7 +65,7 @@ export default function TargetView() {
 
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
-            <thead className="text-left text-ink-soft">
+            <thead className="bg-chrome-soft text-left text-ink-soft">
               <tr className="border-b border-line">
                 <th className="py-1.5 pr-3 font-medium">Target field</th>
                 <th className="py-1.5 pr-3 font-medium">Type</th>

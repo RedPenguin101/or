@@ -177,6 +177,24 @@ func (p *TargetBinding) Build(row map[string]any, mintRef func(rule string, raw 
 	return out
 }
 
+// Template is the payload this binding emits, with a placeholder standing in
+// for every value a row would supply.
+//
+// It runs the emitter — Build, over a synthetic row — rather than describing
+// what the emitter would do, so what a rule's page shows and what a Run sends
+// are one implementation. A second one, written to render the binding for a
+// reader, is a place for the two to disagree, and a user reading the page would
+// be the last to find out. Every column is present, so nothing is omitted and
+// the shape is whole; a NULL is the one thing a template cannot show, which is
+// why the page says so in prose instead.
+func (p *TargetBinding) Template(placeholder func(column string) string, mintRef func(rule, raw string) string) *OrderedMap {
+	row := map[string]any{}
+	for col := range p.Columns() {
+		row[col] = placeholder(col)
+	}
+	return p.Build(row, mintRef)
+}
+
 func joinComma(ss []string) string {
 	out := ""
 	for i, s := range ss {

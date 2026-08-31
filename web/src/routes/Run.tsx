@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, runStatus, statusTone, type Output } from "../api";
-import { ErrorNote, Hash, Panel, Pill, Stat } from "../components/ui";
+import { ErrorNote, Panel, Pill, Stat } from "../components/ui";
 import Flow from "../components/Flow";
 import Rejects from "../components/Rejects";
 
@@ -11,22 +11,33 @@ export default function RunView() {
   const run = useQuery({ queryKey: ["run", rid], queryFn: () => api.run(rid) });
   // Row counts belong to the Datasets, so the flow reads them from there rather
   // than from a copy on the Run. A metadata fetch, not a body one.
-  const datasets = useQuery({ queryKey: ["p", id, "ds"], queryFn: () => api.datasets(id) });
+  const datasets = useQuery({
+    queryKey: ["p", id, "ds"],
+    queryFn: () => api.datasets(id),
+  });
+  // A run records the transform by version, and a version has no name. The name
+  // belongs to the transform itself and never changes with a revision, so it is
+  // the one honest thing to call the input on a past run.
+  const transform = useQuery({
+    queryKey: ["p", id, "transform"],
+    queryFn: () => api.transform(id),
+  });
 
   if (run.error) return <ErrorNote error={run.error} />;
   if (!run.data) return null;
   const r = run.data;
   const status = runStatus(r.totals);
   const byID = new Map((datasets.data ?? []).map((d) => [d.id, d]));
-  const read = Object.entries(r.read).map(([alias, id]) => ({ alias, d: byID.get(id) }));
+  const read = Object.entries(r.read).map(([alias, id]) => ({
+    alias,
+    d: byID.get(id),
+  }));
 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-baseline gap-3">
         <h1 className="text-xl font-semibold tracking-tight">Run #{r.run}</h1>
-        <Pill tone={statusTone(status)}>
-          {status}
-        </Pill>
+        <Pill tone={statusTone(status)}>{status}</Pill>
         <span className="text-sm text-ink-soft">{r.reason}</span>
         <span className="ml-auto text-xs text-ink-soft">
           {r.actor.id} &middot; {r.started_at.slice(0, 19).replace("T", " ")}
@@ -37,53 +48,36 @@ export default function RunView() {
         title="Inputs"
         aside="Output = Run(Mapping, Data) — the mapping is authored, the data is delivered"
       >
-        <div className="flex flex-wrap items-start gap-8 text-xs">
+        <div className="flex flex-wrap items-start gap-10 text-xs">
           <div>
             <div className="mb-1 text-ink-soft">Mapping &middot; schemas</div>
-            {Object.entries(r.inputs.mapping.schemas).map(([k, v]) => (
-              <div key={k} className="mono flex items-center gap-2">
-                {k} <Hash value={v} />
+            {Object.keys(r.inputs.mapping.schemas).map((k) => (
+              <div key={k} className="mono">
+                {k}
               </div>
             ))}
           </div>
           <div>
             <div className="mb-1 text-ink-soft">Mapping &middot; transform</div>
-            <Hash value={r.inputs.mapping.transform} />
+            <div className="mono">{transform.data?.name}</div>
           </div>
           <div>
-            <div className="mb-1 text-ink-soft">Mapping &middot; target contracts</div>
-            {Object.entries(r.inputs.mapping.specs).map(([k, v]) => (
-              <div key={k} className="mono flex items-center gap-2">
-                {k} <Hash value={v} />
+            <div className="mb-1 text-ink-soft">
+              Mapping &middot; target contracts
+            </div>
+            {Object.keys(r.inputs.mapping.specs).map((k) => (
+              <div key={k} className="mono">
+                {k}
               </div>
             ))}
           </div>
           <div>
             <div className="mb-1 text-ink-soft">Data &middot; datasets</div>
-            {Object.entries(r.inputs.data.datasets).map(([k, v]) => (
-              <div key={k} className="mono flex items-center gap-2">
-                {k} <Hash value={v} />
+            {Object.keys(r.inputs.data.datasets).map((k) => (
+              <div key={k} className="mono">
+                {k}
               </div>
             ))}
-          </div>
-        </div>
-
-        <div className="mt-4 flex flex-wrap items-start gap-8 border-t border-line pt-3 text-xs">
-          <div>
-            <div className="mb-1 text-ink-soft">Mapping</div>
-            <Hash value={r.inputs.mapping.digest} />
-          </div>
-          <div>
-            <div className="mb-1 text-ink-soft">Data</div>
-            <Hash value={r.inputs.data.digest} />
-          </div>
-          <div>
-            <div className="mb-1 text-ink-soft">Run identity</div>
-            <Hash value={r.inputs.digest} />
-            <div className="mt-1 max-w-md text-ink-soft/80">
-              Any run with this digest produced exactly this output. Compare the two above to see
-              which half moved: same mapping means the extract changed, same data means we did.
-            </div>
           </div>
         </div>
       </Panel>
@@ -120,15 +114,17 @@ export default function RunView() {
         <OutputPanel key={o.rule} output={o} />
       ))}
 
-      <Panel title="Models" aside="hashes fold in their inputs, so a change invalidates only what depends on it">
+      <Panel
+        title="Models"
+        aside="a model whose inputs have not changed is reused rather than re-run"
+      >
         <table className="w-full text-xs">
-          <thead className="text-left text-ink-soft">
+          <thead className="bg-chrome-soft text-left text-ink-soft">
             <tr className="border-b border-line">
               <th className="py-1.5 pr-3 font-medium">Model</th>
               <th className="py-1.5 pr-3 font-medium">Rows out</th>
               <th className="py-1.5 pr-3 font-medium">Time</th>
-              <th className="py-1.5 pr-3 font-medium">Cached</th>
-              <th className="py-1.5 font-medium">Node hash</th>
+              <th className="py-1.5 font-medium">Cached</th>
             </tr>
           </thead>
           <tbody>
@@ -136,10 +132,11 @@ export default function RunView() {
               <tr key={name} className="border-b border-line/60">
                 <td className="mono py-1.5 pr-3">{name}</td>
                 <td className="py-1.5 pr-3 tabular-nums">{n.rows_out}</td>
-                <td className="py-1.5 pr-3 tabular-nums text-ink-soft">{n.ms}ms</td>
-                <td className="py-1.5 pr-3 text-ink-soft">{n.cached ? "yes" : "no"}</td>
-                <td className="py-1.5">
-                  <Hash value={n.hash} />
+                <td className="py-1.5 pr-3 tabular-nums text-ink-soft">
+                  {n.ms}ms
+                </td>
+                <td className="py-1.5 text-ink-soft">
+                  {n.cached ? "yes" : "no"}
                 </td>
               </tr>
             ))}
@@ -162,13 +159,17 @@ function OutputPanel({ output: s }: { output: Output }) {
       title={
         <span className="flex items-center gap-2">
           {s.title || s.rule}
-          <span className="mono text-xs font-normal text-ink-soft">{s.target}</span>
+          <span className="mono text-xs font-normal text-ink-soft">
+            {s.target}
+          </span>
         </span>
       }
       aside={
         <span className="flex items-center gap-3">
           <span className="text-good">{s.accepted} accepted</span>
-          {s.rejected > 0 && <span className="text-warn">{s.rejected} withheld</span>}
+          {s.rejected > 0 && (
+            <span className="text-warn">{s.rejected} withheld</span>
+          )}
           {s.requests > 0 && (
             <span title="Qniform caps these endpoints at 500 items per request">
               {s.requests} request{s.requests === 1 ? "" : "s"}
@@ -186,7 +187,9 @@ function OutputPanel({ output: s }: { output: Output }) {
               key={t}
               onClick={() => setTab(t)}
               className={`rounded-md px-2.5 py-1 font-medium ${
-                tab === t ? "bg-accent text-white" : "bg-surface text-ink-soft hover:text-ink"
+                tab === t
+                  ? "bg-accent text-white"
+                  : "bg-surface text-ink-soft hover:text-ink"
               }`}
             >
               {t === "payloads" ? "Payloads" : "Withheld"} ({n})
@@ -244,7 +247,9 @@ function Value({ v }: { v: unknown }) {
             <span className="text-good">{k}</span>
             <span className="text-ink-soft">: </span>
             <Value v={iv} />
-            {i < entries.length - 1 && <span className="text-ink-soft">, </span>}
+            {i < entries.length - 1 && (
+              <span className="text-ink-soft">, </span>
+            )}
           </span>
         ))}
         <span className="text-ink-soft">{"}"}</span>

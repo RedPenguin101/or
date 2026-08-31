@@ -155,7 +155,10 @@ export type RunSummary = {
 export type Mint = {
   entity: string;
   prefix: string;
-  from: SchemaName[];
+  // Source *columns* the identity is built from, not schemas: Go's Mint.From is
+  // []string. Typed as SchemaName here since the type was written, which no
+  // caller noticed because both render through join().
+  from: string[];
   column?: string;
   conflict?: { on: string[]; resolve: string };
 };
@@ -196,7 +199,13 @@ export type Transform = {
   rules: Rule[];
   sql: Record<string, string>;
   sql_reads: Record<string, string[]>;
+  // What each rule emits, keyed by rule name — built by the emitter itself over
+  // a row of placeholders, so a page renders the payload rather than deriving
+  // its shape from the binding a second time. A ⟨column⟩ is where a value goes.
+  payloads: Record<string, PayloadTemplate>;
 };
+
+export type PayloadTemplate = Record<string, unknown>;
 
 export type FieldCoverage = {
   name: string;

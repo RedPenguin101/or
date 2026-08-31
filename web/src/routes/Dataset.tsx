@@ -1,7 +1,7 @@
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api";
-import { ErrorNote, Hash, Panel, Pill } from "../components/ui";
+import { ErrorNote, Panel, Pill } from "../components/ui";
 import Rejects from "../components/Rejects";
 
 export default function DatasetView() {
@@ -21,9 +21,8 @@ export default function DatasetView() {
       <div className="flex flex-wrap items-baseline gap-3">
         <h1 className="mono text-xl font-semibold tracking-tight">{d.schema}</h1>
         <Pill>{d.source_system}</Pill>
-        <Hash value={d.hash} />
         <span className="text-xs text-ink-soft">
-          {d.rows} rows
+          delivered {d.created_at.slice(0, 16).replace("T", " ")} &middot; {d.rows} rows
           {d.rejected > 0 && `, ${d.rejected} unreadable`}
         </span>
       </div>
@@ -40,7 +39,7 @@ export default function DatasetView() {
       >
         <div className="overflow-x-auto">
           <table className="mono w-full text-[11px] whitespace-nowrap">
-            <thead className="text-left text-ink-soft">
+            <thead className="bg-chrome-soft text-left text-ink-soft">
               <tr className="border-b border-line">
                 {cols.map((c) => (
                   <th key={c} className="py-1.5 pr-3 font-medium">

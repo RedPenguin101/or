@@ -179,55 +179,6 @@ func normalise(v any) any {
 	}
 }
 
-// quoteIdent lets source column names survive verbatim into SQL. Legacy names
-// are hyphenated ("REP-ID") and the user must see their own column names in the
-// rules, so they are quoted rather than mangled.
-func quoteIdent(s string) string {
-	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
-}
-
-// UnionInto builds an entity's table from the models its Rules produce.
-//
-// Each contributing model is tagged with the model it came from, so a derived
-// row can always be traced back to the rule that made it — which matters most
-// when several rules feed one entity and only one of them is wrong.
-func (e *Engine) UnionInto(table string, models []string) error {
-	if len(models) == 0 {
-		return fmt.Errorf("%s: no models", table)
-	}
-
-	cols, err := e.columns(models[0])
-	if err != nil {
-		return err
-	}
-	// Rules feeding one entity must agree on shape. Catching that here names the
-	// offending rule; letting the UNION fail would report a column count.
-	for _, m := range models[1:] {
-		got, err := e.columns(m)
-		if err != nil {
-			return err
-		}
-		if strings.Join(got, ",") != strings.Join(cols, ",") {
-			return fmt.Errorf("%s: model %q produces columns [%s] but %q produces [%s]; "+
-				"rules feeding one entity must agree",
-				table, m, strings.Join(got, ", "), models[0], strings.Join(cols, ", "))
-		}
-	}
-
-	sel := make([]string, len(cols))
-	for i, c := range cols {
-		sel[i] = quoteIdent(c)
-	}
-	parts := make([]string, len(models))
-	for i, m := range models {
-		parts[i] = fmt.Sprintf("SELECT %s, '%s' AS __model FROM %s",
-			strings.Join(sel, ", "), m, quoteIdent(m))
-	}
-	_, err = e.db.Exec(fmt.Sprintf("CREATE OR REPLACE TABLE %s AS %s",
-		quoteIdent(table), strings.Join(parts, " UNION ALL ")))
-	return err
-}
-
 func (e *Engine) columns(table string) ([]string, error) {
 	rows, err := e.db.Query("SELECT * FROM " + quoteIdent(table) + " LIMIT 0")
 	if err != nil {
@@ -235,4 +186,11 @@ func (e *Engine) columns(table string) ([]string, error) {
 	}
 	defer rows.Close()
 	return rows.Columns()
+}
+
+// quoteIdent lets source column names survive verbatim into SQL. Legacy names
+// are hyphenated ("REP-ID") and the user must see their own column names in the
+// rules, so they are quoted rather than mangled.
+func quoteIdent(s string) string {
+	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }

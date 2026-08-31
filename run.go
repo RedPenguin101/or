@@ -203,13 +203,7 @@ func ExecuteRun(eng *Engine, store string, in RunRequest) (*Run, error) {
 	run.Inputs.Data.Digest = hashJSON(run.Inputs.Data.Datasets)
 	run.Inputs.Digest = hashJSON([]Hash{run.Inputs.Mapping.Digest, run.Inputs.Data.Digest})
 
-	// mintRef applies a rule's prefix to a raw source key. A reference never
-	// restates the mint expression, so the two cannot drift apart.
-	mintOf := map[string]string{}
-	for _, r := range in.Mapping.Transform.Rules {
-		mintOf[r.Name] = r.Mints.Prefix
-	}
-	mintRef := func(rule, raw string) string { return mintOf[rule] + raw }
+	mintRef := in.Mapping.Transform.MintRef()
 
 	// quarantined holds full minted codes. Rules minting one entity are required
 	// to have disjoint prefixes, so a code names exactly one target object and a

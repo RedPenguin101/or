@@ -1,144 +1,163 @@
+import type { ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { api, schemaKey, schemaPath } from "../api";
+import { api, schemaKey, schemaPath, type Bind } from "../api";
 import { ErrorNote, Panel, Pill } from "../components/ui";
 import Sql from "../components/Sql";
 
-// One rule, in full. A rule now carries its whole chain — the source it reads,
-// the identity it mints, the SQL that flattens it, and the shape of the payload
-// that leaves — so this page can show the entire path without joining anything
-// onto it. The prose comes first because it is the part no amount of reading the
-// SQL would tell you.
+// One rule, in three facts: what it maps between, the SQL that does it, and the
+// JSON that leaves. The prose a rule carries lives on the pages that survey many
+// of them; here the reader has already chosen this rule and wants the mechanism.
 export default function RuleView() {
   const { id = "", rule = "" } = useParams();
-  const transform = useQuery({ queryKey: ["p", id, "transform"], queryFn: () => api.transform(id) });
+  const transform = useQuery({
+    queryKey: ["p", id, "transform"],
+    queryFn: () => api.transform(id),
+  });
 
   const r = transform.data?.rules.find((x) => x.name === rule);
   if (transform.isSuccess && !r) return <ErrorNote error={`No rule ${rule}`} />;
   if (!r || !transform.data) return null;
 
-  const fields = r.binding.order ?? Object.keys(r.binding.fields);
+  // The emitter built this payload, so the page reads it rather than working
+  // out what the payload would be: one implementation, and the field order is
+  // the one a run actually sends.
+  const payload = Object.entries(transform.data.payloads[r.name] ?? {});
 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-baseline gap-3">
         <h1 className="text-xl font-semibold tracking-tight">{r.title}</h1>
         <Pill>rule</Pill>
-        <Link to={`/p/${id}`} className="ml-auto text-xs text-accent hover:underline">
+        <Link
+          to={`/p/${id}`}
+          className="ml-auto text-xs text-accent hover:underline"
+        >
           ← project
         </Link>
       </div>
 
-      <Panel title="What it does">
-        <p className="max-w-3xl text-sm leading-relaxed">{r.summary}</p>
-        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
-          {r.from.map((f) => (
+      <Panel title="Maps">
+        <dl className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-baseline gap-x-4 gap-y-2 text-xs">
+          <Fact label="from">
+            <div className="flex flex-wrap gap-2">
+              {r.from.map((f) => (
+                <Link
+                  key={schemaKey(f)}
+                  to={schemaPath(id, f)}
+                  className={chip}
+                >
+                  {schemaKey(f)}
+                </Link>
+              ))}
+            </div>
+          </Fact>
+          <Fact label="to">
             <Link
-              key={schemaKey(f)}
-              to={schemaPath(id, f)}
-              className="mono rounded-md border border-line px-2 py-1 hover:border-accent hover:text-accent"
+              to={`/p/${id}/target?t=${encodeURIComponent(r.to)}`}
+              className={chip}
             >
-              {schemaKey(f)}
+              {r.to}
             </Link>
-          ))}
-          <span className="text-ink-soft">→</span>
-          <Link
-            to={`/p/${id}/target?t=${encodeURIComponent(r.to)}`}
-            className="mono rounded-md border border-line px-2 py-1 hover:border-accent hover:text-accent"
-          >
-            {r.to}
-          </Link>
-        </div>
-      </Panel>
-
-      <Panel title="Identity it mints" aside={`entity: ${r.mints.entity}`}>
-        <div className="space-y-2 text-sm">
-          <div>
-            <span className="mono text-accent">{r.mints.prefix || "(no prefix)"}</span>
+          </Fact>
+          <Fact label="mints">
+            <span className="mono">{r.mints.entity}</span>
+            <span className="text-ink-soft"> as </span>
+            <span className="mono text-accent">
+              {r.mints.prefix || "(no prefix)"}
+            </span>
             <span className="text-ink-soft"> + </span>
             <span className="mono">{r.mints.from.join(" + ")}</span>
-          </div>
-          <p className="max-w-3xl text-xs text-ink-soft">
-            Declared rather than left in the SQL, because identity does far more than the expression
-            suggests: it deduplicates, detects disagreement, resolves what other rules reference,
-            drives the quarantine cascade, aligns one run against another for diffing, and is the
-            closure a slice has to follow. Every one of those needs to know the mint without running
-            it. The prefix keeps this rule&apos;s identities in their own key space, so two rules
-            minting <span className="mono">{r.mints.entity}</span> can never name the same object.
-          </p>
+          </Fact>
           {r.mints.conflict && (
-            <div className="rounded-md border border-warn/40 bg-warn-soft/40 p-3 text-xs">
-              When source rows disagree about{" "}
-              <span className="mono">{r.mints.conflict.on.join(", ")}</span> for the same identity,
-              the policy is <span className="mono">{r.mints.conflict.resolve}</span>: the entity is
-              quarantined and everything naming it is withheld too. No single row is wrong — the set
-              is inconsistent, and picking a winner is a decision someone has to own.
-            </div>
+            <Fact label="conflict">
+              <span className="text-ink-soft">rows disagreeing on </span>
+              <span className="mono">{r.mints.conflict.on.join(", ")}</span>
+              <span className="text-ink-soft"> → </span>
+              <span className="mono">{r.mints.conflict.resolve}</span>
+            </Fact>
           )}
-        </div>
+        </dl>
       </Panel>
 
-      <Panel title="Fields sent to Qniform" aside={`row key: ${r.binding.row_key}`}>
-        <table className="w-full text-xs">
-          <thead className="text-left text-ink-soft">
-            <tr className="border-b border-line">
-              <th className="py-1.5 pr-3 font-medium">Field</th>
-              <th className="py-1.5 font-medium">Notes</th>
-            </tr>
-          </thead>
-          <tbody>
-            {fields.map((name) => {
-              const b = r.binding.fields[name];
-              return (
-                <tr key={name} className="border-b border-line/60 align-top">
-                  <td className="mono py-1.5 pr-3 whitespace-nowrap">{name}</td>
-                  <td className="py-1.5 text-ink-soft">
-                    {b?.object ? (
-                      <div>
-                        A literal: <span className="mono">{JSON.stringify(b.object)}</span>. This
-                        rule never varies it, so it says so outright rather than carrying a column.
-                      </div>
-                    ) : b?.key_from ? (
-                      <div>
-                        Nested: the value in <span className="mono">{b.key_from}</span> becomes the
-                        key. The one shape SQL cannot produce.
-                      </div>
-                    ) : b?.references ? (
-                      <div>
-                        The model holds the raw source key; rule{" "}
-                        <Link to={`/p/${id}/x/${b.references}`} className="text-accent hover:underline">
-                          {b.references}
-                        </Link>{" "}
-                        supplies the prefix. The mint is written once, so the two cannot drift — and
-                        if that identity is quarantined, this row is withheld with it.
-                      </div>
-                    ) : (
-                      <div>
-                        Sent as-is from the model column of the same name, or left out entirely when
-                        it is NULL.
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </Panel>
-
-      <Panel title="How it is computed" aside={`sql/${r.name}.sql`}>
-        <p className="mb-3 max-w-3xl text-xs text-ink-soft">
-          Every decision this rule makes is here. Columns are named for the Qniform fields they
-          become, and a NULL means the field is left out — so nothing downstream renames,
-          reinterprets, or conditionally drops what this produces.
-        </p>
+      <Panel title="SQL" aside={`sql/${r.name}.sql`}>
         <Sql src={transform.data.sql[r.name]} />
-        {transform.data.sql_reads[r.name]?.length ? (
-          <div className="mono mt-1 text-[11px] text-ink-soft">
-            reads {transform.data.sql_reads[r.name].join(", ")}
-          </div>
-        ) : null}
+      </Panel>
+
+      <Panel
+        title="Payload"
+        aside={`one per ${r.binding.row_key} · a NULL column is left out`}
+      >
+        <div className="mono overflow-x-auto rounded-md border border-line bg-surface p-3 text-[11px] leading-relaxed">
+          <div>{"{"}</div>
+          {payload.map(([name, value], i) => (
+            <div
+              key={name}
+              className="flex flex-wrap items-baseline justify-between gap-x-8 pl-4"
+            >
+              <div>
+                <span className="text-syn-string">&quot;{name}&quot;</span>:{" "}
+                <Value json={JSON.stringify(value)} />
+                {i < payload.length - 1 && ","}
+              </div>
+              <Note bind={r.binding.fields[name]} projectID={id} />
+            </div>
+          ))}
+          <div>{"}"}</div>
+        </div>
       </Panel>
     </div>
   );
+}
+
+const chip =
+  "mono rounded-md border border-line px-2 py-1 hover:border-accent hover:text-accent";
+
+function Fact({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <>
+      <dt className="mono text-ink-soft">{label}</dt>
+      <dd>{children}</dd>
+    </>
+  );
+}
+
+// The payload as the backend rendered it. The one thing this knows about the
+// emitter is its placeholder convention — a ⟨column⟩ marks where a row's value
+// goes — which it paints as a column rather than as data. The shape, the order
+// and the values are the emitter's own.
+function Value({ json }: { json: string }) {
+  return (
+    <>
+      {json.split(/(\u27e8[^\u27e9]*\u27e9)/).map((part, i) => (
+        <span
+          key={i}
+          className={
+            part.startsWith("\u27e8") ? "text-syn-ident" : "text-syn-string"
+          }
+        >
+          {part}
+        </span>
+      ))}
+    </>
+  );
+}
+
+function Note({ bind, projectID }: { bind?: Bind; projectID: string }) {
+  if (bind?.object) return <span className="text-ink-soft">literal</span>;
+  if (bind?.key_from)
+    return <span className="text-ink-soft">the column is the key</span>;
+  if (bind?.references)
+    return (
+      <span className="text-ink-soft">
+        identity of{" "}
+        <Link
+          to={`/p/${projectID}/x/${bind.references}`}
+          className="text-accent hover:underline"
+        >
+          {bind.references}
+        </Link>
+      </span>
+    );
+  return null; // the ordinary case: the column of the same name, said once in the aside
 }

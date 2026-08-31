@@ -711,10 +711,14 @@ enforced:
    *target*, it is a rule.
 2. **Every model belongs to exactly one Rule.** `Transform.Validate` rejects an unclaimed model, which
    removes the place rule logic was able to hide.
-3. **An entity is the union of what its Rules produce**, generated rather than authored
-   (`Engine.UnionInto`). `parties.sql` was a hand-written `UNION ALL` and is gone. Rules feeding
-   one entity must agree on columns; disagreeing names the offending rule rather than failing with
-   a column count.
+3. **An entity is the union of what its Rules produce**, generated rather than authored.
+   `parties.sql` was a hand-written `UNION ALL` and is gone.
+
+   `Engine.UnionInto` built that union as a DuckDB table, and checked that rules feeding one entity
+   agreed on columns. It was never wired into a Run — rules emit separately and share one key space
+   by their disjoint prefixes, so no table is ever unioned — and it was deleted as dead code on
+   2026-08-31. The column check went with it, and is not missed: `checkColumnsAgainstTarget` holds
+   every rule to the target endpoint's own fields, which is the constraint that mattered.
 
 The shared-mint duplication this removes indirection from is real — `'FAS_CUST_' || "ACCT-NO"`
 appears in both the customers rule and the accounts rule — but it cannot rot silently: if the two

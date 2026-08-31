@@ -12,9 +12,10 @@ import type { ReactNode } from "react";
 // source field* ("REP-ID", "ACCT-TYPE-CD"), so telling it apart from a target
 // field name is the distinction a reader of these files most needs.
 //
-// Comments get colour too, deliberately understated. In this codebase they are
-// not decoration — the prose in a rule's SQL is what makes the mapping legible
-// without reading the SQL — so they have to stay readable while receding.
+// A comment gets colour too, deliberately understated. The seed's SQL carries
+// none — a rule's prose belongs to the rule, in its manifest, where the pages
+// that survey many rules can read it — but an authored revision may well add
+// one, and it should recede rather than shout.
 export default function Sql({ src }: { src: string }) {
   return (
     <pre className="mono overflow-x-auto rounded-md border border-line bg-surface p-3 text-[11px] leading-relaxed">
@@ -47,10 +48,14 @@ function paint(t: Token, i: number): ReactNode {
 // is missing renders as plain text, which is a smaller failure than colouring
 // something that is not one.
 const KEYWORDS = new Set(
-  ("select from where group by having order limit offset as on join left right inner outer full " +
-   "cross union all distinct case when then else end and or not null is in like between exists " +
-   "with recursive cast try_cast asc desc nulls first last coalesce over partition filter " +
-   "true false interval using natural except intersect qualify").toUpperCase().split(" "),
+  (
+    "select from where group by having order limit offset as on join left right inner outer full " +
+    "cross union all distinct case when then else end and or not null is in like between exists " +
+    "with recursive cast try_cast asc desc nulls first last coalesce over partition filter " +
+    "true false interval using natural except intersect qualify"
+  )
+    .toUpperCase()
+    .split(" "),
 );
 
 const WORD_START = /[A-Za-z_]/;

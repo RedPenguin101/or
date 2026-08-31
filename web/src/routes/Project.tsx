@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, runStatus, statusTone } from "../api";
-import { Empty, ErrorNote, Hash, Panel, Pill } from "../components/ui";
+import { Empty, ErrorNote, Panel, Pill } from "../components/ui";
 import Mapping from "../components/Mapping";
 
 // The project home answers two questions and no others: how does this source
@@ -38,11 +38,6 @@ export default function Project() {
         <h1 className="text-xl font-semibold tracking-tight">{project.data?.name}</h1>
         {project.data && <Pill>{project.data.migration_type}</Pill>}
         <span className="text-xs text-ink-soft">target firm {project.data?.firm}</span>
-        {transform.data && (
-          <span className="ml-auto flex items-center gap-2 text-xs text-ink-soft">
-            rules <Hash value={transform.data.hash} />
-          </span>
-        )}
       </div>
 
       <Panel
@@ -112,7 +107,6 @@ export default function Project() {
                 <span className="ml-auto flex items-center gap-3 text-xs text-ink-soft">
                   <span className="text-good">{r.accepted} accepted</span>
                   {r.rejected > 0 && <span className="text-warn">{r.rejected} withheld</span>}
-                  <Hash value={r.digest} />
                 </span>
               </Link>
             </li>

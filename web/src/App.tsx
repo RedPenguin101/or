@@ -1,4 +1,6 @@
 import { Link, Route, Routes, useLocation } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "./api";
 import Projects from "./routes/Projects";
 import Project from "./routes/Project";
 import RunView from "./routes/Run";
@@ -9,18 +11,47 @@ import TargetView from "./routes/Target";
 
 export default function App() {
   const { pathname } = useLocation();
+  // Home is the project you are working in, not the list of projects: a
+  // migration runs for months inside one of them. The list is reachable from
+  // the project home, where switching is the thing you might actually want.
+  const projectID = pathname.match(/^\/p\/([^/]+)/)?.[1];
+  const atProjectHome = !!projectID && pathname === `/p/${projectID}`;
+  const project = useQuery({
+    queryKey: ["p", projectID],
+    queryFn: () => api.project(projectID!),
+    enabled: !!projectID,
+  });
+
   return (
     <div className="min-h-screen">
-      <header className="border-b border-line bg-raised">
+      <header className="border-b border-line bg-chrome">
         <div className="mx-auto flex max-w-6xl items-center gap-3 px-5 py-3">
-          <Link to="/" className="text-sm font-semibold tracking-tight">
+          <Link
+            to={projectID ? `/p/${projectID}` : "/"}
+            className="text-sm font-semibold tracking-tight"
+          >
             OnRamp
           </Link>
-          <span className="text-xs text-ink-soft">
-            migration to Qniform &middot; iteration&nbsp;1
-          </span>
-          {pathname !== "/" && (
-            <Link to="/" className="ml-auto text-xs text-accent hover:underline">
+          {projectID ? (
+            <>
+              <span className="text-xs text-ink-soft">/</span>
+              <Link
+                to={`/p/${projectID}`}
+                className="text-sm tracking-tight hover:text-accent"
+              >
+                {project.data?.name ?? " "}
+              </Link>
+            </>
+          ) : (
+            <span className="text-xs text-ink-soft">
+              migration to Qniform &middot; iteration&nbsp;1
+            </span>
+          )}
+          {atProjectHome && (
+            <Link
+              to="/"
+              className="ml-auto text-xs text-ink-soft hover:text-accent"
+            >
               All projects
             </Link>
           )}

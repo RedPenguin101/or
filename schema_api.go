@@ -46,7 +46,18 @@ type transformView struct {
 	Rules       []Rule              `json:"rules"`
 	SQL         map[string]string   `json:"sql"`
 	SQLReads    map[string][]string `json:"sql_reads"`
+
+	// Payloads is what each rule emits, keyed by rule name: the emitter's own
+	// output over a row of placeholders. The page that shows a rule renders
+	// this rather than deriving the shape from the binding a second time.
+	Payloads map[string]*OrderedMap `json:"payloads"`
 }
+
+// payloadColumn is how a model column appears in a payload template: its name in
+// angle brackets, sitting in the slot the value fills. The brackets are also the
+// frontend's cue to paint it as a column rather than as data, so the convention
+// lives here, next to the view that emits it.
+func payloadColumn(column string) string { return "\u27e8" + column + "\u27e9" }
 
 func (a *App) getTransform(w http.ResponseWriter, r *http.Request) {
 	m, err := a.DB.GetMapping(r.Context(), r.PathValue("id"))
@@ -59,9 +70,14 @@ func (a *App) getTransform(w http.ResponseWriter, r *http.Request) {
 	for _, in := range x.Inputs {
 		inputs[in.As] = true
 	}
+	mintRef := x.MintRef()
+	payloads := make(map[string]*OrderedMap, len(x.Rules))
+	for _, r := range x.Rules {
+		payloads[r.Name] = r.Binding.Template(payloadColumn, mintRef)
+	}
 	writeJSON(w, http.StatusOK, transformView{
 		Name: x.Name, Version: x.Version, Description: x.Description, Hash: x.Hash(),
 		Inputs: x.Inputs, Targets: x.Targets(), Rules: x.Ordered(),
-		SQL: x.SQL, SQLReads: x.SQLReads(inputs),
+		SQL: x.SQL, SQLReads: x.SQLReads(inputs), Payloads: payloads,
 	})
 }

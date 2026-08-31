@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, schemaKey, sameSchema } from "../api";
 import type { SchemaName } from "../api";
-import { Empty, ErrorNote, Hash, Panel, Pill } from "../components/ui";
+import { Empty, ErrorNote, Panel, Pill } from "../components/ui";
 
 // A Source Schema and its data belong on one page: the schema is a claim about
 // what the file contains, the datasets are the files, and the interesting
@@ -42,7 +42,6 @@ export default function SchemaView() {
       <div className="flex flex-wrap items-baseline gap-3">
         <h1 className="mono text-xl font-semibold tracking-tight">{s?.schema}</h1>
         <Pill>{s?.source_system}</Pill>
-        {s && <Hash value={s.hash} />}
         <Link to={`/p/${id}`} className="ml-auto text-xs text-accent hover:underline">
           ← project
         </Link>
@@ -95,10 +94,11 @@ export default function SchemaView() {
                 to={`/p/${id}/d/${d.id}`}
                 className="flex items-center gap-3 py-2.5 hover:text-accent"
               >
-                <Hash value={d.hash} />
+                <span className="mono text-xs">
+                  {d.created_at.slice(0, 16).replace("T", " ")}
+                </span>
                 <span className="text-xs text-ink-soft">{d.rows} rows</span>
                 {d.rejected > 0 && <Pill tone="warn">{d.rejected} withheld at coercion</Pill>}
-                <span className="ml-auto text-xs text-ink-soft">{d.created_at.slice(0, 16)}</span>
               </Link>
             </li>
           ))}
@@ -108,7 +108,7 @@ export default function SchemaView() {
       <Panel title="Fields" aside={`${s?.fields.length ?? 0} declared`}>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
-            <thead className="text-left text-ink-soft">
+            <thead className="bg-chrome-soft text-left text-ink-soft">
               <tr className="border-b border-line">
                 <th className="py-1.5 pr-3 font-medium">Field</th>
                 <th className="py-1.5 pr-3 font-medium">Type</th>

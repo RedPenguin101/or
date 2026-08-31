@@ -136,6 +136,12 @@ stable across YAML formatting); `hashBytes` is for content that is already bytes
 a spec document — where canonicalising would change what the hash means. The frontend's `Hash` is
 only an alias: TypeScript is structural, so it documents without checking.
 
+**Hashes are housekeeping, and the UI does not show them.** They are how the system keys content and
+proves a Run reproducible, not something a migration analyst reads: a sha256 in front of a user is
+noise standing where a name, a date or a version should be. The API still returns them — they are the
+record, and an agent working on these structures reads them there — but no page renders one. Where a
+hash was the only label a thing had (a delivered dataset), the page names it by when it arrived.
+
 **A hash covers the whole body**, never a projection of it — otherwise two different bodies share a
 key and the second stored is silently the first read back. `Transform.Hash` and `SourceSchema.Hash`
 are both `hashJSON` of the whole struct. `Spec` is the exception that proves it: `Hash` identifies
@@ -168,8 +174,9 @@ is size and shape, not category: three small documents against one large columna
    closure, and all of those need it without executing it. Two rules minting one entity must have
    disjoint prefixes (checked at load); `checkMintedPrefix` verifies the SQL agrees with the
    declaration. **Every SQL file belongs to exactly one Rule** (`Validate` rejects an unclaimed one),
-   and an **entity** is the generated union of what its rules produce (`Engine.UnionInto`), never a
-   hand-written model. Both rules exist because an unclaimed "preparation" model is where rule logic
+   and an **entity** is the union of what its rules produce, never a hand-written model — a union
+   with no table behind it: each rule emits on its own, `Collapse` (`run.go`) groups its rows on the
+   declared identity, and the disjoint prefixes make one key space across the rules. Both rules exist because an unclaimed "preparation" model is where rule logic
    hides while the rule page shows a thin projection — which is exactly what happened with the
    `stg_accounts` this replaced. An **Output** is one target API call; a **Rule** is a named group binding source
    schemas to one Output, carrying the prose that makes the mapping legible without reading SQL.

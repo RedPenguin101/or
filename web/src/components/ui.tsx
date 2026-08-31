@@ -12,24 +12,13 @@ export function Panel({
   return (
     <section className="rounded-lg border border-line bg-raised">
       {title && (
-        <header className="flex items-baseline justify-between gap-4 border-b border-line px-4 py-2.5">
+        <header className="flex items-baseline justify-between gap-4 rounded-t-lg border-b border-line bg-chrome-soft px-4 py-2.5">
           <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
           {aside && <div className="text-xs text-ink-soft">{aside}</div>}
         </header>
       )}
       <div className="p-4">{children}</div>
     </section>
-  );
-}
-
-export function Hash({ value }: { value: string }) {
-  return (
-    <span
-      className="mono rounded bg-accent-soft px-1.5 py-0.5 text-[11px] text-accent"
-      title="Content hash — this is the version"
-    >
-      {value.replace(/^sha256:/, "")}
-    </span>
   );
 }
 
@@ -65,7 +54,9 @@ export function Stat({
   value: ReactNode;
   tone?: "good" | "warn" | "bad";
 }) {
-  const c = tone ? { good: "text-good", warn: "text-warn", bad: "text-bad" }[tone] : "";
+  const c = tone
+    ? { good: "text-good", warn: "text-warn", bad: "text-bad" }[tone]
+    : "";
   return (
     <div>
       <div className={`text-2xl font-semibold tabular-nums ${c}`}>{value}</div>
@@ -81,6 +72,8 @@ export function Empty({ children }: { children: ReactNode }) {
 export function ErrorNote({ error }: { error: unknown }) {
   const msg = error instanceof Error ? error.message : String(error);
   return (
-    <div className="rounded-md border border-bad bg-bad-soft px-3 py-2 text-sm text-bad">{msg}</div>
+    <div className="rounded-md border border-bad bg-bad-soft px-3 py-2 text-sm text-bad">
+      {msg}
+    </div>
   );
 }
