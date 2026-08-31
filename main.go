@@ -40,15 +40,16 @@ func main() {
 		log.Fatalf("store: %v", err)
 	}
 
-	// The spec is optional to start but its absence is announced loudly: without
-	// it, emitted payloads are unchecked and "Qniform-shaped" becomes a claim
-	// rather than a fact.
-	if spec, err := LoadSpec(qniformSpecPath()); err != nil {
-		log.Printf("WARNING: Qniform spec not loaded (%v) — payloads will NOT be validated", err)
-	} else {
-		app.Spec = spec
-		log.Printf("validating payloads against %s", qniformSpecPath())
+	// The target spec is part of the deterministic contract, not an optional
+	// extra: validating against it withholds payloads, so a Run without it would
+	// silently produce different output. Refuse to start rather than run
+	// something that cannot be reproduced.
+	spec, err := LoadSpec(targetSpecPath())
+	if err != nil {
+		log.Fatalf("target spec: %v", err)
 	}
+	app.Spec = spec
+	log.Printf("target spec %s", targetSpecPath())
 
 	for name, mt := range types {
 		log.Printf("migration type %s: %d schema(s), transform %q", name, len(mt.Schemas), transformName(mt))

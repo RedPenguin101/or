@@ -19,15 +19,18 @@ Qniform's OpenAPI spec are recorded in its §1 and are expensive to rediscover.
 
 - `bash build.sh` — format, vet, test, build both halves. The full pass.
 - `bash run.sh` — build and start the server (does **not** run tests). Needs `DATABASE_URL`.
-- `go test .` — the Go suite. **It loads Qniform's `openapi.yaml`** (from `QNIFORM_SPEC`, else
-  `~/Code/qniform6/openapi.yaml`) and fails rather than skipping if absent, deliberately: a
-  silently skipped spec check is how "Qniform-shaped" output drifts into being a mock.
+- `go test .` — the Go suite. It loads the target spec from `targets/qniform/openapi.yaml` and
+  fails rather than skipping if absent, deliberately: a silently skipped spec check is how
+  "Qniform-shaped" output drifts into being a mock.
+- `bash spec-check.sh` — reports drift between OnRamp's copy of the target contract and Qniform's
+  own. Out of band on purpose; nothing in a Run reads the Qniform repository.
 - `go test -run TestApplyFanOutAndCascade .` — one test.
 - `cd web && npm run dev` — Vite on :5173, proxying `/api` to :8090. Gate frontend type checking on
   `npm run build` (`tsc -b`), not `tsc --noEmit`.
 
 Environment: `DATABASE_URL` (required), `ONRAMP_ADDR` (default `:8090`), `ONRAMP_STORE` (default
-`data/`), `QNIFORM_SPEC`.
+`data/`), `ONRAMP_TARGET_SPEC` (override the vendored spec; tests only), `QNIFORM_SPEC` (upstream
+location, read by `spec-check.sh` alone).
 
 ## Dev servers: the default ports are the user's
 
@@ -64,9 +67,16 @@ the data itself — all content-addressed, so a Run's identity is their **digest
 exactly reproducible. `run.go` holds it; read that first.
 
 **The target spec is an input, not a dependency**: spec validation *withholds* payloads, so a
-changed Qniform contract changes the output. It is hashed per target (`Spec.HashFor`), because only
-the endpoints a transform writes are inputs to it. Do not move it out of `InputVersions` —
+changed contract changes the output. It is hashed per target (`Spec.HashFor`), because only the
+endpoints a transform writes are inputs to it. Do not move it out of `InputVersions` —
 `TestTargetSpecIsPartOfTheContract` pins this.
+
+**The spec is OnRamp's own file** (`targets/qniform/openapi.yaml`), checked in. It is a description
+of a data format, in the same category as a SourceSchema — one describes the source's shape, the
+other the target's — and is OpenAPI only because that is what Qniform emits. Never read it from
+`~/Code/qniform6` at run time: that made a foreign, unpinnable file part of the deterministic
+contract and left Runs recording a spec hash nothing could resolve. Drift is `spec-check.sh`, and
+adopting a change is a decision, not a refresh.
 
 **Storage is split three ways** and this is deliberate (`design.md` §5): Postgres holds metadata
 only (`db.go`, `migrations/001_initial_schema.sql`); dataset content lands as Parquet under

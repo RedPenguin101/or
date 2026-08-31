@@ -9,12 +9,19 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Spec is enough of Qniform's OpenAPI document to check an emitted payload
-// before anything is sent.
+// Spec describes the shape of the target's data: what Qniform will accept at
+// each endpoint.
 //
-// This is what stops the skeleton being a mock: "Qniform-shaped" output that is
-// never checked against the real spec hides exactly the integration problems the
-// skeleton exists to find (design.md §10, rule 7).
+// It is a description of a data format, in the same category as a SourceSchema —
+// one describes the source's shape, the other the target's. It happens to be
+// written as OpenAPI because that is a convenient way to describe an API and
+// because it is what Qniform emits, not because OnRamp needs OpenAPI.
+//
+// The copy under targets/ is OnRamp's own, checked into this repository.
+// Reading it live from the Qniform repository made a foreign, unpinnable file
+// part of the deterministic contract, and left a Run recording a hash nothing
+// could resolve back to content. Keeping drift in step with real Qniform is a
+// separate, out-of-band concern — see spec-check.sh.
 type Spec struct {
 	Paths map[string]map[string]operation `yaml:"paths"`
 	path  string
@@ -207,9 +214,24 @@ func containsStr(ss []string, s string) bool {
 	return false
 }
 
-// qniformSpecPath locates the target system's OpenAPI document. Qniform is a
-// separate repository, not a dependency, so the path is configuration.
-func qniformSpecPath() string {
+// TargetSpecPath is OnRamp's own copy of the target's contract. Checked in, so a
+// Run's recorded spec version can always be resolved back to the document that
+// produced it.
+const TargetSpecPath = "targets/qniform/openapi.yaml"
+
+// targetSpecPath allows an override for tests and for the drift check, but the
+// default is always the vendored copy: a run must never depend on a file this
+// repository does not contain.
+func targetSpecPath() string {
+	if p := os.Getenv("ONRAMP_TARGET_SPEC"); p != "" {
+		return p
+	}
+	return TargetSpecPath
+}
+
+// upstreamSpecPath points at Qniform's own document, for the drift check only.
+// Nothing in a Run reads it.
+func upstreamSpecPath() string {
 	if p := os.Getenv("QNIFORM_SPEC"); p != "" {
 		return p
 	}

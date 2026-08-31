@@ -7,11 +7,11 @@ import (
 
 func testSpec(t *testing.T) *Spec {
 	t.Helper()
-	path := qniformSpecPath()
+	path := targetSpecPath()
 	if _, err := os.Stat(path); err != nil {
 		// Deliberately fatal rather than skipped. A silently skipped spec check
 		// is how "Qniform-shaped" output drifts into being a mock.
-		t.Fatalf("Qniform spec not found at %s (set QNIFORM_SPEC): %v", path, err)
+		t.Fatalf("target spec not found at %s: %v", path, err)
 	}
 	s, err := LoadSpec(path)
 	if err != nil {

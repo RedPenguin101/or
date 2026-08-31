@@ -308,6 +308,25 @@ same reason — prose is documentation, contract is shape.
 The four read cleanly as a sentence: what the source looks like, what the target looks like, how to
 map between them, and the data going through the pipe.
 
+### The target spec is OnRamp's, not Qniform's `[DECIDED]`
+
+It was read live from `~/Code/qniform6/openapi.yaml`. That made a file in another repository — one
+OnRamp neither owns nor can pin — part of the deterministic contract, and left every Run recording a
+spec version that nothing could resolve back to content.
+
+A target spec is **a description of a data format**, the same category of thing as a Source Schema:
+one says what the source's data looks like, the other what the target's does. It is written as
+OpenAPI because that is a convenient way to describe an API and because it is what Qniform emits,
+not because OnRamp requires OpenAPI. Nothing about it needs to live abroad.
+
+So it is vendored: `targets/qniform/openapi.yaml`, checked in, and the only thing a Run reads. The
+server refuses to start without it, because a Run validated against a missing spec silently produces
+different output.
+
+Staying in step with real Qniform is a separate, **out-of-band** concern (`spec-check.sh`). Adopting
+an upstream change is a decision rather than a refresh: it can alter what a Run produces, and every
+Run since the last adoption was validated against the copy currently held.
+
 **Content-address everything:** `[LEANING]`
 
 - Dataset version = hash of content.

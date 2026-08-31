@@ -43,9 +43,9 @@ func runFAS(t *testing.T) *Run {
 // meant to prove real payloads, so a run that skips the check proves less.
 func mustSpec(t *testing.T) *Spec {
 	t.Helper()
-	s, err := LoadSpec(qniformSpecPath())
+	s, err := LoadSpec(targetSpecPath())
 	if err != nil {
-		t.Fatalf("Qniform spec (set QNIFORM_SPEC): %v", err)
+		t.Fatalf("target spec: %v", err)
 	}
 	return s
 }
