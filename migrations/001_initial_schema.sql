@@ -120,7 +120,6 @@ CREATE TABLE IF NOT EXISTS runs (
     -- target looks like, how to map between them, and the data itself. Two runs
     -- with the same digest are guaranteed to have produced the same output.
     digest       TEXT        NOT NULL,
-    status       TEXT        NOT NULL,
     -- Required, not optional. The audit obligation is about *why*.
     reason       TEXT        NOT NULL CHECK (length(trim(reason)) > 0),
     actor        TEXT        NOT NULL,

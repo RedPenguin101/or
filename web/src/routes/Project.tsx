@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "../api";
+import { api, runStatus, statusTone } from "../api";
 import { Empty, ErrorNote, Hash, Panel, Pill } from "../components/ui";
 import Mapping from "../components/Mapping";
 
@@ -105,8 +105,8 @@ export default function Project() {
                 className="flex items-center gap-3 py-2.5 hover:text-accent"
               >
                 <span className="mono text-sm">#{r.number}</span>
-                <Pill tone={r.status === "clean" ? "good" : r.status === "blocked" ? "bad" : "warn"}>
-                  {r.status}
+                <Pill tone={statusTone(runStatus(r))}>
+                  {runStatus(r)}
                 </Pill>
                 <span className="text-sm">{r.reason}</span>
                 <span className="ml-auto flex items-center gap-3 text-xs text-ink-soft">

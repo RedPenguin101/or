@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { api, type Output } from "../api";
+import { api, runStatus, statusTone, type Output } from "../api";
 import { ErrorNote, Hash, Panel, Pill, Stat } from "../components/ui";
 import Flow from "../components/Flow";
 import Rejects from "../components/Rejects";
@@ -16,7 +16,7 @@ export default function RunView() {
   if (run.error) return <ErrorNote error={run.error} />;
   if (!run.data) return null;
   const r = run.data;
-  const status = r.totals.rejected === 0 ? "clean" : r.totals.accepted === 0 ? "blocked" : "partial";
+  const status = runStatus(r.totals);
   const byID = new Map((datasets.data ?? []).map((d) => [d.id, d]));
   const read = Object.entries(r.read).map(([alias, id]) => ({ alias, d: byID.get(id) }));
 
@@ -24,7 +24,7 @@ export default function RunView() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-baseline gap-3">
         <h1 className="text-xl font-semibold tracking-tight">Run #{r.run}</h1>
-        <Pill tone={status === "clean" ? "good" : status === "blocked" ? "bad" : "warn"}>
+        <Pill tone={statusTone(status)}>
           {status}
         </Pill>
         <span className="text-sm text-ink-soft">{r.reason}</span>

@@ -29,7 +29,7 @@ func runFAS(t *testing.T) *Run {
 	}
 	run, err := ExecuteRun(eng, store, RunRequest{
 		Number: 1, Project: "fas-demo", Reason: "walking skeleton",
-		Actor: Actor{Kind: "test", ID: "go"}, Firm: "PERSUS",
+		Actor: Actor{Kind: "test", ID: "go"},
 		Mapping: &Mapping{
 			Schemas:   map[SchemaName]*SourceSchema{schema.SchemaName: schema},
 			Transform: x, Spec: mustSpec(t),
@@ -119,8 +119,10 @@ func TestApplyFanOutAndCascade(t *testing.T) {
 			t.Errorf("account reject %s blames %q, want reps", r.Identity, r.Cause.Output)
 		}
 	}
-	if run.Status() != "partial" {
-		t.Errorf("status = %q, want partial: quarantine is not failure", run.Status())
+	// Quarantine is not failure: the run withholds what conflicts and emits the
+	// rest, so both counts are non-zero.
+	if run.Totals.Accepted == 0 || run.Totals.Rejected == 0 {
+		t.Errorf("totals = %+v, want both non-zero: quarantine is partial, not failed", run.Totals)
 	}
 }
 
@@ -274,7 +276,6 @@ func TestRuleColumnsMustBeTargetFields(t *testing.T) {
 	}
 	_, err = ExecuteRun(eng, store, RunRequest{
 		Number: 1, Project: "fas-demo", Reason: "guard", Actor: Actor{Kind: "test", ID: "go"},
-		Firm: "PERSUS",
 		Mapping: &Mapping{
 			Schemas:   map[SchemaName]*SourceSchema{schema.SchemaName: schema},
 			Transform: x, Spec: mustSpec(t),
@@ -326,7 +327,7 @@ func TestTargetSpecIsPartOfTheContract(t *testing.T) {
 	}
 	changed, err := ExecuteRun(eng, store, RunRequest{
 		Number: 1, Project: "fas-demo", Reason: "narrowed contract",
-		Actor: Actor{Kind: "test", ID: "go"}, Firm: "PERSUS",
+		Actor: Actor{Kind: "test", ID: "go"},
 		Mapping: &Mapping{
 			Schemas:   map[SchemaName]*SourceSchema{schema.SchemaName: schema},
 			Transform: x, Spec: spec,

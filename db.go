@@ -284,9 +284,9 @@ func (d *DB) PutRun(ctx context.Context, id, projectID string, r *Run) error {
 		return err
 	}
 	_, err = d.pool.Exec(ctx,
-		`INSERT INTO runs (id, project_id, number, digest, status, reason, actor, body, started_at, finished_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-		id, projectID, r.Number, r.Inputs.Digest, r.Status(), r.Reason,
+		`INSERT INTO runs (id, project_id, number, digest, reason, actor, body, started_at, finished_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+		id, projectID, r.Number, r.Inputs.Digest, r.Reason,
 		r.Actor.Kind+":"+r.Actor.ID, body, r.StartedAt, r.FinishedAt)
 	return err
 }
@@ -295,7 +295,6 @@ type RunSummary struct {
 	ID        string `json:"id"`
 	Number    int    `json:"number"`
 	Digest    string `json:"digest"`
-	Status    string `json:"status"`
 	Reason    string `json:"reason"`
 	Actor     string `json:"actor"`
 	StartedAt string `json:"started_at"`
@@ -306,7 +305,7 @@ type RunSummary struct {
 
 func (d *DB) ListRuns(ctx context.Context, projectID string) ([]RunSummary, error) {
 	rows, err := d.pool.Query(ctx,
-		`SELECT id, number, digest, status, reason, actor, started_at::text,
+		`SELECT id, number, digest, reason, actor, started_at::text,
 		        (body->'totals'->>'emitted')::int,
 		        (body->'totals'->>'accepted')::int,
 		        (body->'totals'->>'rejected')::int
@@ -318,7 +317,7 @@ func (d *DB) ListRuns(ctx context.Context, projectID string) ([]RunSummary, erro
 	out := []RunSummary{}
 	for rows.Next() {
 		var s RunSummary
-		if err := rows.Scan(&s.ID, &s.Number, &s.Digest, &s.Status, &s.Reason, &s.Actor,
+		if err := rows.Scan(&s.ID, &s.Number, &s.Digest, &s.Reason, &s.Actor,
 			&s.StartedAt, &s.Emitted, &s.Accepted, &s.Rejected); err != nil {
 			return nil, err
 		}

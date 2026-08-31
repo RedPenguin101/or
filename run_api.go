@@ -64,7 +64,6 @@ func (a *App) createRun(w http.ResponseWriter, r *http.Request) {
 	in := RunRequest{
 		Project: p.Name, Reason: req.Reason,
 		Actor:     Actor{Kind: "user", ID: req.Actor},
-		Firm:      p.Firm,
 		Mapping:   mapping,
 		Datasets:  map[string]*Dataset{},
 		DatasetID: map[string]string{},

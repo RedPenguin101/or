@@ -71,6 +71,22 @@ export type Dataset = SchemaName & {
   created_by: string;
 };
 
+// A Run's status is a reading of its totals, not a fact the backend stores:
+// nothing server-side branches on it, so deriving it in the one place it is
+// displayed beats keeping a column and a second implementation that can drift.
+//
+// Quarantine is not failure. A run that withholds some rows and emits the rest
+// is partial, and its output is still reproducible and still diffable.
+export type RunStatus = "clean" | "partial" | "blocked";
+
+export function runStatus(t: { accepted: number; rejected: number }): RunStatus {
+  if (t.rejected === 0) return "clean";
+  return t.accepted === 0 ? "blocked" : "partial";
+}
+
+export const statusTone = (s: RunStatus) =>
+  s === "clean" ? "good" : s === "blocked" ? "bad" : "warn";
+
 export type Output = {
   rule: string;
   title?: string;
@@ -86,15 +102,12 @@ export type Output = {
 export type Run = {
   run: number;
   project: string;
-  tier: string;
   reason: string;
   actor: { kind: string; id: string };
   started_at: string;
   finished_at: string;
   // Dataset record id per input alias — the link back to the ingest.
   read: Record<string, string>;
-  // Four things a Run is a function of: what the source looks like, what the
-  // target looks like, how to map between them, and the data itself.
   // Two halves, because the four inputs are two kinds of thing: the mapping is
   // authored and revised by decision, the data is delivered. Separate digests
   // answer "did the mapping change, or the data?" in one comparison.
@@ -120,7 +133,6 @@ export type RunSummary = {
   id: string;
   number: number;
   digest: string;
-  status: string;
   reason: string;
   actor: string;
   started_at: string;

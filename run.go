@@ -38,7 +38,6 @@ type Run struct {
 	Read map[string]string `json:"read"`
 
 	Nodes   map[string]NodeStat `json:"nodes"`
-	Target  RunTarget           `json:"target"`
 	Outputs []RuleOutput        `json:"outputs"`
 	Totals  Totals              `json:"totals"`
 }
@@ -94,12 +93,6 @@ type NodeStat struct {
 	Ms     int64  `json:"ms"`
 }
 
-type RunTarget struct {
-	Kind          string `json:"kind"`
-	QniformSchema string `json:"qniform_schema,omitempty"`
-	Firm          string `json:"firm,omitempty"`
-}
-
 // RuleOutput is what one Rule produced: the payloads it emitted to its target
 // and everything it withheld on the way.
 type RuleOutput struct {
@@ -127,20 +120,6 @@ type Totals struct {
 	Rejected int `json:"rejected"`
 }
 
-// Status is deliberately not binary. A Run that quarantines is a *partial* run,
-// not a failed one: quarantine is a pure function of the inputs, so the output is
-// still reproducible and still diffable against another Run.
-func (r *Run) Status() string {
-	switch {
-	case r.Totals.Accepted == 0 && r.Totals.Rejected > 0:
-		return "blocked"
-	case r.Totals.Rejected > 0:
-		return "partial"
-	default:
-		return "clean"
-	}
-}
-
 // RunRequest is everything one Run consumes, plus who asked for it and why.
 //
 // The four things it is a function of — what the source looks like, what the
@@ -151,7 +130,6 @@ type RunRequest struct {
 	Project string
 	Reason  string
 	Actor   Actor
-	Firm    string
 
 	// Mapping is the three authored inputs together: the source schemas, the
 	// transform, and the target contract it writes against.
@@ -192,7 +170,6 @@ func ExecuteRun(eng *Engine, store string, in RunRequest) (*Run, error) {
 		Reason:    in.Reason,
 		Read:      map[string]string{},
 		Nodes:     map[string]NodeStat{},
-		Target:    RunTarget{Kind: "preview", Firm: in.Firm},
 		Inputs: InputVersions{
 			Mapping: mv,
 			Data:    DataVersions{Datasets: map[string]string{}},
