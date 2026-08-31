@@ -2,7 +2,12 @@ source_system: FAS
 schema: ACCOUNT-MASTER
 title: Account Master
 description: >
-  One record per account. FAS has no party file — customers and registered
+  One record per account, across every ledger the firm keeps — customers, the
+  firm's own books, the program banks, safekeeping and the control accounts. The
+  ledger is encoded in the account number range; see ACCT-NO.
+
+
+  FAS has no party file — customers, custodians, banks and registered
   representatives exist only as denormalised columns on this record and must be
   derived. See devnotes/design.md §3a.
 layout: csv
@@ -12,22 +17,65 @@ fields:
   - name: ACCT-NO
     type: string
     required: true
-    description: Account number. Unique. Space-padded to 10 in the source file.
+    description: >
+      Account number. Unique. Space-padded to 10 in the source file.
+
+
+      The number is not just a key: FAS partitions the account file into ledgers
+      by number range, and the range an account falls in *is* its class. This is
+      the table, and it is the authority for the Qniform account type — every
+      rule that needs to know what kind of account it is reads the range, not
+      ACCT-TYPE-CD.
+
+
+        00010000-00099999  Program bank ledger           -> bank
+        00100000-89999999  Customer ledger               -> customer
+        91000000-92999999  Firm proprietary ledger       -> inventory
+        93000000-93899999  Clearing / suspense ledger    -> control
+        93900000-93999999  Broker safekeeping ledger     -> custody
+        95000000-95999999  Dividend and interest ledger  -> control
+        97000000-97999999  Stock borrow / loan ledger    -> not mapped yet
+        99999997-99999999  Firm control ledger           -> control
+
+
+      Three FAS ledgers collapse onto `control`: the mapping is deliberately not
+      a bijection, because Qniform models settlement, dividend suspense and firm
+      P&L as one kind of account and FAS keeps them apart.
+
+
+      Two ledgers are knowledge without a mapping. The upper firm-proprietary
+      band (92000000-92999999) holds correspondents' own books, which Qniform
+      calls `pab` — it is read as `inventory` for now, because a PAB is to be
+      told apart by another attribute rather than by its number. The stock
+      borrow/loan ledger has no mapping at all: Qniform has an `sbl` account type
+      but no `sbl` party role, and its counterparty rules do not cover the type,
+      so an account there is withheld rather than guessed at.
+
+
+      A number in none of these ranges yields no type, and the account is
+      withheld at validation. An unrecognised ledger is a discovery about the
+      client's file, not a row to wave through.
     encoding: { kind: trim }
 
   - name: ACCT-TYPE-CD
     type: enum
     required: true
     description: >
-      Account class. Drives almost everything downstream: H maps to a Qniform
-      `inventory` account (no counterparty, responsible party is a *trader*),
-      everything else to a `customer` account (counterparty required,
-      responsible party is a *rep*).
+      Registration form: how a customer account is held. It is *not* the account
+      class — that is the ledger the number falls in, see ACCT-NO — and the two
+      are at different grains. I, J and C say something only about a customer
+      account; H says only "not a customer account", which every non-customer
+      ledger carries and which the range already says more precisely.
+
+
+      So H is no longer read. J is: a joint holding combines its two name lines
+      into one party, and this is what says the second line is a name rather than
+      the address line it is often misused as.
     values:
       I: Individual
       J: Joint
       C: Corporate
-      H: House / firm inventory
+      H: House / firm. Carried by every ledger that is not the customer ledger.
 
   - name: ACCT-SHORT-NAME
     type: string
@@ -39,7 +87,10 @@ fields:
     type: string
     required: false
     description: >
-      Primary holder name. Absent on H accounts. On J accounts this is one of two
+      The other side of whatever relationship the account records, by ledger: the
+      holder on a customer account, the custodian on the broker safekeeping
+      ledger, the program bank on the bank ledger. Blank on the proprietary and
+      control ledgers, which have no other side. On J accounts this is one of two
       holders — Qniform models a joint holding as a single party, so the two lines
       must be combined rather than producing two parties.
     encoding: { kind: trim }
@@ -50,7 +101,8 @@ fields:
     required: false
     description: >
       Second holder on J accounts; otherwise blank. Frequently misused as an
-      address line, which is why it is not safe to treat as a name unconditionally.
+      address line, which is why it is not safe to treat as a name unconditionally
+      — ACCT-TYPE-CD = J is what licenses reading it as one.
     encoding: { kind: trim }
     null_values: ["", "N/A"]
 
@@ -58,9 +110,11 @@ fields:
     type: string
     required: false
     description: >
-      Registered rep number, zero-padded to 4. On H accounts this is the trading
-      desk id, not a rep — the same column carries a different meaning by account
-      type. 0000 means unassigned.
+      Registered rep number, zero-padded to 4. On the firm proprietary ledger it
+      is the trading desk id, not a rep — the same column carries a different
+      meaning by ledger. 0000 means unassigned, and the bank, custody and control
+      ledgers leave it there: nobody is answerable for those accounts in this
+      sense, and Qniform refuses a responsible party on them.
     encoding: { kind: trim }
     null_values: ["0000"]
 

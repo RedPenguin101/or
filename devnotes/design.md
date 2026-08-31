@@ -707,6 +707,14 @@ third structural shape beyond entities and roles.
    table: an *index* over the body, written only by the insert that writes the body, never updated
    — the same move `number`, `digest`, `status`, `reason` and `actor` already make for the
    scalar-valued fields. Not worth building until something asks the question.
+10. Where a **source-side lookup table** lives — the FAS account-number range map, §3d. `[LEANING]`:
+    restated per rule for now; the Source Schema is the likely home if the duplication bites. Also
+    open in the same breath: whether `ACCT-TYPE-CD` disagreeing with the range should be *detected*
+    rather than ignored, which is a second decision with its own reason.
+11. When a FAS account becomes a **`pab`** rather than an `inventory` account, §3d. `[OPEN]` — the
+    correspondent-proprietary band is read as `inventory` because the distinguishing attribute is
+    not in the extract yet. Qniform's `sbl` type is blocked differently: it has no matching party
+    role and no counterparty rule, so it is the target that is not ready.
 
 ---
 
@@ -836,7 +844,7 @@ source columns, which is exactly `mints.from`.
 
 Two further consequences now in place:
 
-- **References never restate the mint.** `counterparty: { references: customers }` — the model holds
+- **References never restate the mint.** `counterparty: { references: counterparties }` — the model holds
   the raw source key, and the referenced rule's prefix is applied when the payload is built. The
   expression is written once, so the two cannot drift. Previously drift was caught only by the
   accident that it made every reference unresolvable.
@@ -851,3 +859,75 @@ The `role` column in `party_customers.sql` existed **only** because one payload 
 rules. With its own shape, the customers rule states its role as a literal
 (`roles: { object: { customer: {} } }`) and drops the column — and §3b's guard flagged it as dead
 the moment it stopped being read. Literals add no expressiveness, since a constant cannot compute.
+
+The column came back in §3d, and the distinction held up under it: that rule now spans three
+ledgers and mints a customer, a custodian or a bank depending on which, so its role genuinely varies
+by row and is a column again. A literal is right exactly when the rule *only ever* produces one
+thing, and the guard is what makes the two cases tell themselves apart.
+
+## 3d. Account class comes from the number range, and the range table lives in the rule
+
+`[DECIDED]` What kind of account a FAS record describes is encoded in its **account number**, not in
+a column. FAS partitions its account file into ledgers by number range, and the range an account
+falls in *is* its class — the pattern is near-universal in the legacy systems OnRamp migrates from,
+because on a mainframe the number range is how the ledger is physically partitioned.
+
+```
+00010000-00099999  Program bank ledger           -> bank
+00100000-89999999  Customer ledger               -> customer
+91000000-92999999  Firm proprietary ledger       -> inventory
+93000000-93899999  Clearing / suspense ledger    -> control
+93900000-93999999  Broker safekeeping ledger     -> custody
+95000000-95999999  Dividend and interest ledger  -> control
+97000000-97999999  Stock borrow / loan ledger    -> not mapped
+99999997-99999999  Firm control ledger           -> control
+```
+
+Three consequences, each of which exercises something the architecture already claimed:
+
+- **The mapping is not a bijection.** Three FAS ledgers collapse onto `control`; one Qniform type
+  (`pab`) is reachable only by an attribute the extract does not yet carry, so the upper proprietary
+  band is read as `inventory` until it does; and one FAS ledger has no mapping at all. Qniform has an
+  `sbl` account type but no `sbl` party role, and its counterparty rules do not cover the type, so a
+  stock-loan account **is withheld** rather than guessed at — it emits no `type`, and the target's
+  own spec refuses it at validation. Withholding is the right answer to an unrecognised ledger,
+  which is a discovery about the client's file.
+- **`ACCT-TYPE-CD` shrinks to what it actually is.** It was carrying two grains at once: `I`/`J`/`C`
+  are *registration forms* of a customer account, while `H` said only "not a customer account" —
+  which every non-customer ledger carries and which the range says far more precisely. So `H` is no
+  longer read, and `J` is what licenses reading `CUST-NAME-2` as a second holder rather than the
+  address line it is often misused as. **The number supersedes the code**; the two are not
+  cross-checked. A disagreement detector is cheap to add later and would be a decision of its own.
+- **The class fans a single column out three ways.** `CUST-NAME-1` is the holder on the customer
+  ledger, the custodian on the broker safekeeping ledger and the program bank on the bank ledger.
+  Qniform keeps `customer`, `custodian` and `bank` apart as party roles, and each account type
+  accepts only its own, so this is one rule (`counterparties`) minting one entity with the role
+  taken from a column — the same shape `reps` already used for rep-vs-trader.
+
+### Where the table lives, and what that costs
+
+**In each rule's SQL, restated.** Three rules need to know the class — `accounts` for the type and
+for which optional slots Qniform permits, `counterparties` for the role, `reps` for rep-vs-trader —
+and each opens with the same `classified` CTE.
+
+There is nowhere shared to put it, and that is on purpose: §3c requires every SQL file to belong to
+exactly one rule, precisely so that rule logic cannot hide in an unclaimed "preparation" model while
+the rule page shows a thin projection. A range table is exactly the shape of thing that would move
+there first, and it is exactly the thing a migration analyst most needs to see *in* the rule that
+acts on it.
+
+The cost is real: three copies with nothing keeping them in step. Two ways out were considered and
+neither is taken yet.
+
+- **Put it in the Source Schema**, as per-field data on `ACCT-NO`, beside `null_values` — the same
+  argument that makes a null sentinel schema data rather than a rule ("which sentinel means absent
+  is discovered knowledge") applies unchanged to "which range means which ledger". Ingest would land
+  a typed `ledger` column and the rules would just read it. It bends §3's "ingest decodes and types,
+  it never derives", though arguably not far: the number *encodes* the ledger the way an overpunch
+  encodes a sign, and no target knowledge is involved. **This is the likely answer if the duplication
+  bites.** It is deferred because one range table copied three times is legible, and a new field-level
+  mechanism in the schema is not something to add before it has earned it.
+- **A shared model no rule claims** — rejected outright. That is the `stg_accounts` §3c removed.
+
+For now the table is documented once in the schema (`ACCT-NO`'s description, which is where a person
+looks for it) and executed three times in SQL. If a fourth rule needs it, revisit.

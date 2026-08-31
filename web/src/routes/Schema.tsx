@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, schemaKey, sameSchema } from "../api";
 import type { SchemaName } from "../api";
 import { Empty, ErrorNote, Panel, Pill } from "../components/ui";
+import { Description } from "../components/Prose";
 
 // A Source Schema and its data belong on one page: the schema is a claim about
 // what the file contains, the datasets are the files, and the interesting
@@ -46,7 +47,11 @@ export default function SchemaView() {
           ← project
         </Link>
       </div>
-      {s && <p className="max-w-3xl text-sm text-ink-soft">{s.description}</p>}
+      {s && (
+        <div className="max-w-3xl text-sm text-ink-soft">
+          <Description text={s.description} />
+        </div>
+      )}
 
       {feeds.length > 0 && (
         <Panel title="What this feeds">
@@ -141,7 +146,9 @@ export default function SchemaView() {
                       ? f.null_values.map((v) => JSON.stringify(v)).join(" ")
                       : "—"}
                   </td>
-                  <td className="py-1.5 text-ink-soft">{f.description}</td>
+                  <td className="py-1.5 text-ink-soft">
+                    <Description text={f.description} />
+                  </td>
                 </tr>
               ))}
             </tbody>

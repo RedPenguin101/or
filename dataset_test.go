@@ -41,8 +41,8 @@ func TestIngestFASAccountMaster(t *testing.T) {
 	if r.Class != RejectRow || r.Phase != PhaseCoercion {
 		t.Errorf("reject class/phase = %s/%s, want row/coercion", r.Class, r.Phase)
 	}
-	if ds.Rows != 19 {
-		t.Errorf("landed rows = %d, want 19", ds.Rows)
+	if ds.Rows != 26 {
+		t.Errorf("landed rows = %d, want 26", ds.Rows)
 	}
 
 	if err := eng.Attach("stg_account_master", ds.DataPath(store)); err != nil {

@@ -76,7 +76,7 @@ func TestApplyFanOutAndCascade(t *testing.T) {
 	for _, o := range run.Outputs {
 		order = append(order, o.Rule)
 	}
-	if strings.Join(order, ",") != "customers,reps,accounts" {
+	if strings.Join(order, ",") != "counterparties,reps,accounts" {
 		t.Errorf("rule order = %v; accounts must run after both party rules", order)
 	}
 	// Two reps have inconsistent spellings across the file. Neither is a bad row;
@@ -96,28 +96,41 @@ func TestApplyFanOutAndCascade(t *testing.T) {
 	if p.Accepted != 4 {
 		t.Errorf("reps accepted = %d, want 4 (0203 plus three desks)", p.Accepted)
 	}
-	if c := output(run, "customers"); c.Accepted != 16 {
-		t.Errorf("customers accepted = %d, want 16", c.Accepted)
+	// 16 customers, one custodian and two program banks: the counterparty rule
+	// spans three ledgers, because the other side of the relationship is a
+	// different kind of party on each.
+	if c := output(run, "counterparties"); c.Accepted != 19 {
+		t.Errorf("counterparties accepted = %d, want 19", c.Accepted)
 	}
 
 	// The cascade: 2 quarantined reps withhold the 10 accounts that name them.
+	// The eleventh reject is the account whose number falls in no known ledger,
+	// which is a different failure and carries no cause.
 	a := output(run, "accounts")
-	if a.Rejected != 10 {
-		t.Errorf("account rejects = %d, want 10 (5 on REP 0042, 5 on REP 0117)", a.Rejected)
+	if a.Rejected != 11 {
+		t.Errorf("account rejects = %d, want 11 (5 on REP 0042, 5 on REP 0117, 1 unmapped ledger)", a.Rejected)
 	}
-	if a.Accepted != 9 {
-		t.Errorf("accounts accepted = %d, want 9", a.Accepted)
+	if a.Accepted != 15 {
+		t.Errorf("accounts accepted = %d, want 15", a.Accepted)
 	}
-	// Every one must carry its cause, or the report says "10 accounts failed"
-	// instead of "10 accounts failed *because* two reps conflict".
+	// Every cascaded one must carry its cause, or the report says "10 accounts
+	// failed" instead of "10 accounts failed *because* two reps conflict".
+	var cascaded, unmapped int
 	for _, r := range a.Rejects {
 		if r.Cause == nil {
-			t.Errorf("account reject %s has no cause", r.Identity)
+			unmapped++
+			if r.Identity != "0097000001" || r.Field != "type" {
+				t.Errorf("uncaused account reject %s on %q; want the unmapped-ledger account", r.Identity, r.Field)
+			}
 			continue
 		}
+		cascaded++
 		if r.Cause.Output != "reps" {
 			t.Errorf("account reject %s blames %q, want reps", r.Identity, r.Cause.Output)
 		}
+	}
+	if cascaded != 10 || unmapped != 1 {
+		t.Errorf("account rejects = %d cascaded + %d unmapped, want 10 + 1", cascaded, unmapped)
 	}
 	// Quarantine is not failure: the run withholds what conflicts and emits the
 	// rest, so both counts are non-zero.
@@ -126,41 +139,77 @@ func TestApplyFanOutAndCascade(t *testing.T) {
 	}
 }
 
-func TestApplyConditionalFieldsByType(t *testing.T) {
+// The Qniform account type is read from the FAS account number range, not from
+// ACCT-TYPE-CD — and the type then decides which optional slots may be filled.
+// Qniform is strict in both directions: filling a slot the type forbids fails
+// the whole request rather than the item, so the rule has to get it right here.
+func TestAccountTypeComesFromTheNumberRange(t *testing.T) {
 	t.Parallel()
 	run := runFAS(t)
 	a := output(run, "accounts")
 
-	var house, customer int
+	// What the ledger map says each of these accounts is. Three FAS ledgers
+	// collapse onto `control`, so the mapping is not a bijection.
+	wantType := map[string]string{
+		"0000010001": "bank",      // program bank ledger
+		"0000010002": "bank",      //
+		"0000100009": "customer",  // customer ledger
+		"0000100014": "customer",  //
+		"0091000001": "inventory", // firm proprietary ledger
+		"0093000001": "control",   // clearing / suspense
+		"0093900001": "custody",   // broker safekeeping
+		"0095000001": "control",   // dividend and interest
+		"0099999999": "control",   // firm control
+	}
+
+	byType := map[string]int{}
 	for _, p := range a.Payloads {
-		typ, _ := p.Get("type")
+		code, _ := mustGet(p, "code").(string)
+		typ, _ := mustGet(p, "type").(string)
+		byType[typ]++
+		if want, ok := wantType[code]; ok && typ != want {
+			t.Errorf("account %s type = %q, want %q from its number range", code, typ, want)
+		}
+
 		_, hasCounterparty := p.Get("counterparty")
-		rp, _ := p.Get("responsible_party")
+		_, hasResponsible := p.Get("responsible_party")
 
 		switch typ {
-		case "inventory":
-			house++
-			// Sending counterparty on an inventory account fails the WHOLE
-			// request with a 400, not just the item. It must be absent.
-			if hasCounterparty {
-				t.Errorf("inventory account %v carries counterparty", mustGet(p, "code"))
-			}
 		case "customer":
-			customer++
+			// Optional, but every one of these records a named holder.
 			if !hasCounterparty {
-				code := mustGet(p, "code")
-				// The one account with an unassigned rep is the exception.
-				if code != "0000100014" {
-					t.Errorf("customer account %v has no counterparty", code)
-				}
+				t.Errorf("customer account %s has no counterparty", code)
+			}
+		case "custody", "bank":
+			// Required: the custodian holding the stock, the bank taking the
+			// deposit. And nobody is answerable for either in Qniform's sense.
+			if !hasCounterparty {
+				t.Errorf("%s account %s must name a counterparty", typ, code)
+			}
+			if hasResponsible {
+				t.Errorf("%s account %s carries a responsible party, which is rejected", typ, code)
+			}
+		case "inventory":
+			// Rejected: the firm is both sides of its own positions.
+			if hasCounterparty {
+				t.Errorf("inventory account %s carries a counterparty", code)
+			}
+		case "control":
+			if hasCounterparty || hasResponsible {
+				t.Errorf("control account %s carries a counterparty or responsible party", code)
 			}
 		default:
-			t.Errorf("unexpected account type %v", typ)
+			t.Errorf("account %s has unexpected type %q", code, typ)
 		}
-		_ = rp
 	}
-	if house != 3 {
-		t.Errorf("inventory accounts = %d, want 3", house)
+
+	// Six of Qniform's seven account types, reached from one flat file with no
+	// column saying which is which.
+	want := map[string]int{"bank": 2, "customer": 6, "inventory": 3, "control": 3, "custody": 1}
+	for typ, n := range want {
+		if byType[typ] != n {
+			t.Errorf("%s accounts = %d, want %d", typ, byType[typ], n)
+		}
 	}
 }
 
@@ -187,16 +236,26 @@ func TestDerivedRolesVaryByAccountType(t *testing.T) {
 		}
 		roles[key]++
 	}
-	// The same REP-ID column yields a trader on house accounts and a rep on
-	// customer accounts — one column, two target roles, decided by a sibling.
-	if roles["trader"] != 3 {
-		t.Errorf("trader parties = %d, want 3 (the three desks)", roles["trader"])
+	// Two columns, five roles, every one of them decided by the ledger the
+	// account number falls in. REP-ID is a trader on the firm's proprietary
+	// ledger and a rep on the customer ledger; CUST-NAME-1 is a customer, a
+	// custodian or a bank depending on which ledger names it.
+	want := map[string]int{
+		"trader":    3,  // the three desks
+		"rep":       1,  // only 0203 survives the name conflicts
+		"customer":  16, // one per customer-ledger account with a holder
+		"custodian": 1,  // the depository, from the broker safekeeping ledger
+		"bank":      2,  // the two sweep program banks
 	}
-	if roles["customer"] != 16 {
-		t.Errorf("customer parties = %d, want 16", roles["customer"])
+	for role, n := range want {
+		if roles[role] != n {
+			t.Errorf("%s parties = %d, want %d", role, roles[role], n)
+		}
 	}
-	if roles["rep"] != 1 {
-		t.Errorf("rep parties = %d, want 1 (only 0203 survives the conflicts)", roles["rep"])
+	for role, n := range roles {
+		if _, ok := want[role]; !ok {
+			t.Errorf("unexpected role %q on %d parties", role, n)
+		}
 	}
 }
 
@@ -258,8 +317,8 @@ func TestRuleColumnsMustBeTargetFields(t *testing.T) {
 	// A column that is not a field of PUT /firms/{firm}/accounts, is not read
 	// for a nesting key, and is not infrastructure.
 	x.SQL["accounts"] = strings.Replace(x.SQL["accounts"],
-		"    __row\nFROM account_master",
-		"    \"STATUS-CD\" AS status,\n    __row\nFROM account_master", 1)
+		"    __row\nFROM classified",
+		"    \"STATUS-CD\" AS status,\n    __row\nFROM classified", 1)
 	if !strings.Contains(x.SQL["accounts"], "AS status") {
 		t.Fatal("test fixture did not apply; the SQL text must have changed")
 	}
